@@ -126,7 +126,7 @@ spotify_monitor --monitor-mode scrobble_health --lastfm-username LASTFM_USERNAME
 
 You can pass the credentials with `--lastfm-api-key`, `--scrobble-client-id` and `--scrobble-refresh-token` instead. Use `--scrobble-redirect-uri` if the app does not register the default redirect. Private values passed as arguments may remain visible in shell history or process listings.
 
-The default alert requires five consecutive unmatched completed plays. The oldest of those plays must be at least 20 minutes old. This deliberately tolerates short Last.fm delays and occasional missing scrobbles. The relevant settings are:
+The default alert requires five consecutive unmatched completed plays. The oldest of those plays must be at least 20 minutes old. This deliberately tolerates short Last.fm delays and occasional missing scrobbles. Outage alerts identify when the first missing Spotify play occurred. If more than five plays are missing, they label and list the five most recent ones. The relevant settings are:
 
 | Setting | One-run option | Default | Purpose |
 | --- | --- | ---: | --- |
