@@ -220,6 +220,8 @@ def test_safe_config_writer_backs_up_existing_file():
         assert backup_path.match("spotify_monitor.conf.*.bak")
         assert backup_path.read_text(encoding="utf-8") == 'TARGET_USER_URI_ID = "old-user"\n'
         assert destination.read_text(encoding="utf-8") == 'TARGET_USER_URI_ID = "new-user"\n'
+        if os.name == "posix":
+            assert backup_path.stat().st_mode & 0o777 == 0o600
 
 
 # Verifies invalid config content leaves an existing destination untouched
@@ -378,3 +380,53 @@ def test_successful_config_load_updates_namespace():
         assert monitor.load_config_file(config_path, namespace) is True
     assert namespace["TARGET_USER_URI_ID"] == "configured-user"
     assert namespace["SPOTIFY_CHECK_INTERVAL"] == 45
+
+
+# Verifies config loading rejects executable expressions without invoking them
+def test_config_loader_rejects_executable_content(monkeypatch, capsys):
+    system_call = patch.object(monitor.os, "system")
+    with make_temp_directory() as directory_name, system_call as system_mock:
+        config_path = Path(directory_name) / "malicious.conf"
+        config_path.write_text('TARGET_USER_URI_ID = __import__("os").system("unexpected")\n', encoding="utf-8")
+        assert monitor.load_config_file(config_path, {}) is False
+    system_mock.assert_not_called()
+    output = capsys.readouterr().out
+    assert "only documented NAME = literal assignments" in output
+
+
+# Verifies config loading rejects undocumented names and control-flow statements
+@pytest.mark.parametrize("content", ['UNSUPPORTED_SETTING = 1\n', 'if True:\n    TARGET_USER_URI_ID = "user"\n'])
+def test_config_loader_rejects_unsupported_statements(content, capsys):
+    with make_temp_directory() as directory_name:
+        config_path = Path(directory_name) / "unsupported.conf"
+        config_path.write_text(content, encoding="utf-8")
+        assert monitor.load_config_file(config_path, {}) is False
+    assert "unsupported content" in capsys.readouterr().out
+
+
+# Verifies invalid Friend Activity timing flags fail during argument validation
+@pytest.mark.parametrize("option", ["--check-interval", "--offline-timer", "--disappeared-timer"])
+def test_nonpositive_friend_activity_timing_flags_are_rejected(option):
+    result = run_cli([option, "0", "--doctor", "--env-file", "none"])
+    assert result.returncode == 2
+    assert f"{option} must be greater than zero" in result.stderr
+
+
+# Verifies invalid configured timing values stop startup before network access
+def test_invalid_configured_timing_stops_before_network_access():
+    with make_temp_directory() as directory_name:
+        config_path = Path(directory_name) / "invalid-timing.conf"
+        config_path.write_text('TARGET_USER_URI_ID = "configured-user"\nSPOTIFY_CHECK_INTERVAL = 0\nDOTENV_FILE = "none"\n', encoding="utf-8")
+        result = run_cli(["--config-file", str(config_path)])
+    assert result.returncode == 1
+    assert "SPOTIFY_CHECK_INTERVAL must be a number greater than zero" in result.stdout
+    assert "network request attempted" not in result.stderr
+
+
+# Verifies activity flag failures are visible and disable the integration
+def test_flag_file_failure_is_visible_and_disables_integration(monkeypatch, capsys):
+    with make_temp_directory() as directory_name:
+        monkeypatch.setattr(monitor, "FLAG_FILE", directory_name)
+        assert monitor.flag_file_delete() is False
+    assert monitor.FLAG_FILE == ""
+    assert "Activity flag integration was disabled" in capsys.readouterr().out
