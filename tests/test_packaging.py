@@ -111,3 +111,27 @@ def test_installed_console_generates_valid_config(package_test_directory: Path, 
     assert "TOKEN_SOURCE" in generated
     assert "SPOTIFY_CHECK_INTERVAL" in generated
     assert "WEBHOOK_ENABLED" in generated
+
+
+class TestWorkflowSupplyChain:
+    # Every third-party action is pinned to a commit, so a moved tag cannot change what runs with our secrets
+    def test_actions_are_pinned_to_commit_shas(self):
+        unpinned = []
+        for workflow in sorted((PROJECT_ROOT / ".github" / "workflows").glob("*.yml")):
+            for match in re.finditer(r"uses:\s*(\S+)", workflow.read_text(encoding="utf-8")):
+                reference = match.group(1)
+                if reference.startswith("./"):
+                    continue
+                action, _, ref = reference.partition("@")
+                if not re.fullmatch(r"[0-9a-f]{40}", ref):
+                    unpinned.append(f"{workflow.name}: {reference}")
+        assert unpinned == []
+
+    # Each pin records the human-readable version so updates stay reviewable
+    def test_pinned_actions_carry_a_version_comment(self):
+        missing = []
+        for workflow in sorted((PROJECT_ROOT / ".github" / "workflows").glob("*.yml")):
+            for line in workflow.read_text(encoding="utf-8").splitlines():
+                if "uses:" in line and "@" in line and "./" not in line and not re.search(r"#\s*v?\d", line):
+                    missing.append(f"{workflow.name}: {line.strip()}")
+        assert missing == []
