@@ -94,25 +94,32 @@ def test_webhook_provider_detection(url, expected):
 def test_sighup_reload_clears_auth_caches_and_updates_webhook_provider(monkeypatch):
     if not hasattr(monitor.signal, "SIGHUP"):
         pytest.skip("SIGHUP is unavailable on Windows")
-    replacements = {"REFRESH_TOKEN": "new-refresh-token", "WEBHOOK_URL": "https://ntfy.sh/new-private-topic"}
-    monkeypatch.setattr(monitor, "DOTENV_FILE", "test.env")
-    monkeypatch.setattr(monitor, "TOKEN_SOURCE", "client")
-    monkeypatch.setattr(monitor, "LOGIN_REQUEST_BODY_FILE", "")
-    monkeypatch.setattr(monitor, "CLIENTTOKEN_REQUEST_BODY_FILE", "")
-    monkeypatch.setattr(monitor, "REFRESH_TOKEN", "old-refresh-token")
-    monkeypatch.setattr(monitor, "WEBHOOK_URL", "https://discord.com/api/webhooks/123/old-token")
-    monkeypatch.setattr(monitor, "WEBHOOK_PROVIDER", "discord")
-    monkeypatch.setattr(monitor, "SP_CACHED_ACCESS_TOKEN", "cached-access")
-    monkeypatch.setattr(monitor, "SP_CACHED_REFRESH_TOKEN", "cached-refresh")
-    monkeypatch.setattr(monitor, "SP_ACCESS_TOKEN_EXPIRES_AT", 999)
-    monkeypatch.setattr(monitor, "SP_CACHED_CLIENT_ID", "cached-client-id")
-    monkeypatch.setattr(monitor, "SP_CACHED_OAUTH_APP_TOKEN", "cached-oauth")
-    monkeypatch.setattr(monitor, "SP_CACHED_CLIENT_TOKEN", "cached-client-token")
-    monkeypatch.setattr(monitor, "SP_CLIENT_TOKEN_EXPIRES_AT", 999)
-    monkeypatch.setattr(monitor, "SP_CACHED_SCROBBLE_ACCESS_TOKEN", "cached-scrobble-token")
-    monkeypatch.setattr(monitor, "SP_SCROBBLE_ACCESS_TOKEN_EXPIRES_AT", 999)
-    monkeypatch.setattr(monitor, "SP_CACHED_SCROBBLE_AUTH_FINGERPRINT", "cached-scrobble-auth")
-    with patch("dotenv.load_dotenv"), patch.object(monitor.os, "getenv", side_effect=replacements.get):
+    with make_test_directory() as directory_name:
+        env_path = Path(directory_name) / ".env"
+        env_path.write_text('REFRESH_TOKEN="old-refresh-token"\nWEBHOOK_URL="https://discord.com/api/webhooks/123/old-token"\n', encoding="utf-8")
+        monkeypatch.setattr(monitor, "REFRESH_TOKEN", "")
+        monkeypatch.setattr(monitor, "WEBHOOK_URL", "")
+        monkeypatch.setattr(monitor, "DOTENV_MANAGED_KEYS", set())
+        monkeypatch.setattr(monitor, "DOTENV_BASE_VALUES", {})
+        monkeypatch.setenv("REFRESH_TOKEN", "")
+        monkeypatch.setenv("WEBHOOK_URL", "")
+        monitor.apply_dotenv_mapping(monitor.read_dotenv_mapping(env_path), initialize_base=True)
+        env_path.write_text('REFRESH_TOKEN="new-refresh-token"\nWEBHOOK_URL="https://ntfy.sh/new-private-topic"\n', encoding="utf-8")
+        monkeypatch.setattr(monitor, "DOTENV_FILE", str(env_path))
+        monkeypatch.setattr(monitor, "TOKEN_SOURCE", "client")
+        monkeypatch.setattr(monitor, "LOGIN_REQUEST_BODY_FILE", "")
+        monkeypatch.setattr(monitor, "CLIENTTOKEN_REQUEST_BODY_FILE", "")
+        monkeypatch.setattr(monitor, "WEBHOOK_PROVIDER", "discord")
+        monkeypatch.setattr(monitor, "SP_CACHED_ACCESS_TOKEN", "cached-access")
+        monkeypatch.setattr(monitor, "SP_CACHED_REFRESH_TOKEN", "cached-refresh")
+        monkeypatch.setattr(monitor, "SP_ACCESS_TOKEN_EXPIRES_AT", 999)
+        monkeypatch.setattr(monitor, "SP_CACHED_CLIENT_ID", "cached-client-id")
+        monkeypatch.setattr(monitor, "SP_CACHED_OAUTH_APP_TOKEN", "cached-oauth")
+        monkeypatch.setattr(monitor, "SP_CACHED_CLIENT_TOKEN", "cached-client-token")
+        monkeypatch.setattr(monitor, "SP_CLIENT_TOKEN_EXPIRES_AT", 999)
+        monkeypatch.setattr(monitor, "SP_CACHED_SCROBBLE_ACCESS_TOKEN", "cached-scrobble-token")
+        monkeypatch.setattr(monitor, "SP_SCROBBLE_ACCESS_TOKEN_EXPIRES_AT", 999)
+        monkeypatch.setattr(monitor, "SP_CACHED_SCROBBLE_AUTH_FINGERPRINT", "cached-scrobble-auth")
         monitor.reload_secrets_signal_handler(monitor.signal.SIGHUP, None)
     assert monitor.REFRESH_TOKEN == "new-refresh-token"
     assert monitor.WEBHOOK_PROVIDER == "ntfy"
@@ -126,6 +133,28 @@ def test_sighup_reload_clears_auth_caches_and_updates_webhook_provider(monkeypat
     assert monitor.SP_CACHED_SCROBBLE_ACCESS_TOKEN is None
     assert monitor.SP_SCROBBLE_ACCESS_TOKEN_EXPIRES_AT == 0
     assert monitor.SP_CACHED_SCROBBLE_AUTH_FINGERPRINT == ""
+
+
+# Verifies SIGHUP clears a secret removed from the selected dotenv file
+def test_sighup_reload_clears_removed_dotenv_secret(monkeypatch):
+    if not hasattr(monitor.signal, "SIGHUP"):
+        pytest.skip("SIGHUP is unavailable on Windows")
+    with make_test_directory() as directory_name:
+        env_path = Path(directory_name) / ".env"
+        env_path.write_text('REFRESH_TOKEN="obsolete-refresh-token"\n', encoding="utf-8")
+        monkeypatch.setattr(monitor, "REFRESH_TOKEN", "")
+        monkeypatch.setattr(monitor, "DOTENV_MANAGED_KEYS", set())
+        monkeypatch.setattr(monitor, "DOTENV_BASE_VALUES", {})
+        monkeypatch.setenv("REFRESH_TOKEN", "")
+        monitor.apply_dotenv_mapping(monitor.read_dotenv_mapping(env_path), initialize_base=True)
+        env_path.write_text("# secret removed\n", encoding="utf-8")
+        monkeypatch.setattr(monitor, "DOTENV_FILE", str(env_path))
+        monkeypatch.setattr(monitor, "TOKEN_SOURCE", "cookie")
+        monkeypatch.setattr(monitor, "SP_CACHED_ACCESS_TOKEN", "cached-access")
+        monitor.reload_secrets_signal_handler(monitor.signal.SIGHUP, None)
+    assert monitor.REFRESH_TOKEN == ""
+    assert monitor.os.environ.get("REFRESH_TOKEN") == ""
+    assert monitor.SP_CACHED_ACCESS_TOKEN is None
 
 
 # Verifies ntfy input normalization preserves HTTPS URLs and expands only valid bare topics
@@ -544,6 +573,30 @@ def test_notification_channels_are_independent(monkeypatch):
     assert monitor.send_notification_channels("song", "Title", "Body", email_enabled=False, webhook_enabled=True) == (False, True)
     email.assert_not_called()
     webhook.assert_called_once_with("Title", "Body", "song", force=True, image_url="", ntfy_priority=0, ntfy_tags="")
+
+
+# Verifies channel results report delivery success instead of attempted sends
+def test_notification_channels_report_transport_failures(monkeypatch):
+    monkeypatch.setattr(monitor, "send_email", Mock(return_value=1))
+    monkeypatch.setattr(monitor, "send_webhook", Mock(return_value=1))
+    assert monitor.send_notification_channels("song", "Title", "Body", email_enabled=True, webhook_enabled=True) == (False, False)
+
+
+# Verifies failed activity transitions remain queued until their channels succeed
+def test_failed_activity_notification_is_retried(monkeypatch):
+    email = Mock(side_effect=[1, 0])
+    webhook = Mock(side_effect=[1, 0])
+    monkeypatch.setattr(monitor, "PENDING_ACTIVITY_NOTIFICATIONS", [])
+    monkeypatch.setattr(monitor, "send_email", email)
+    monkeypatch.setattr(monitor, "send_webhook", webhook)
+
+    assert monitor.send_notification_channels("active", "Title", "Body", email_enabled=True, webhook_enabled=True) == (False, False)
+    assert len(monitor.PENDING_ACTIVITY_NOTIFICATIONS) == 1
+    monitor.retry_pending_activity_notifications()
+
+    assert monitor.PENDING_ACTIVITY_NOTIFICATIONS == []
+    assert email.call_count == 2
+    assert webhook.call_count == 2
 
 
 # Verifies compact content is ntfy-only and missing compact fields fall back to normal content
