@@ -878,8 +878,10 @@ re_replace_str = r'( - (\d*)( )*remaster$)|( - (\d*)( )*remastered( version)*( \
 # Default value for network-related timeouts in functions; in seconds
 FUNCTION_TIMEOUT = 15
 
-# Default value for alarm signal handler timeout; in seconds
-ALARM_TIMEOUT = 15
+# Enclosing main-loop watchdog timeout; in seconds
+# This is a backstop for the rare case where a per-request timeout does not fire. It must stay larger than a
+# single request's own alarm (FUNCTION_TIMEOUT + 2) so a nested request alarm never pre-empts legitimate work
+ALARM_TIMEOUT = 2 * (FUNCTION_TIMEOUT + 2) + 5
 ALARM_RETRY = 10
 
 # Variables for caching functionality of the Spotify 'cookie' access token and 'client' refresh token to avoid unnecessary refreshing
@@ -10390,9 +10392,6 @@ def main():
 
     if not TOKEN_SOURCE:
         TOKEN_SOURCE = "cookie"
-
-    if TOKEN_SOURCE == "cookie":
-        ALARM_TIMEOUT = int((TOKEN_MAX_RETRIES * TOKEN_RETRY_TIMEOUT) + 5)
 
     if args.user_agent:
         USER_AGENT = args.user_agent
