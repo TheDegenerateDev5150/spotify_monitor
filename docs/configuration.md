@@ -7,7 +7,7 @@ Examples on this page use the PyPI command `spotify_monitor`. Manual script, Doc
 
 You can pass most settings as command-line options or save them in a configuration file for later runs.
 
-The easiest way to create this file is `spotify_monitor --setup`. The wizard checks the settings before saving. If you approve replacement of an existing file, it saves a timestamped backup first. Replacement builds a fresh configuration from defaults, so settings that are not shown by the wizard are reset unless you restore them from the backup. Friend Activity setup defaults to `spotify_monitor.conf` plus `.env`. The focused scrobble health wizard defaults to `spotify_monitor_scrobble_health.conf` plus `.env.scrobble_health` so both modes can be configured independently in the same directory.
+The easiest way to create this file is `spotify_monitor --setup`. The wizard checks the settings before saving. If you approve replacement of an existing file, it saves a timestamped owner-only backup first. Replacement builds a fresh configuration from defaults, so settings that are not shown by the wizard are reset unless you restore them from the backup. Friend Activity setup defaults to `spotify_monitor.conf` plus `.env`. The focused scrobble health wizard defaults to `spotify_monitor_scrobble_health.conf` plus `.env.scrobble_health` so both modes can be configured independently in the same directory.
 
 To edit every available setting yourself, generate a default configuration file:
 
@@ -572,6 +572,8 @@ NTFY_ACCESS_TOKEN="tk_your_ntfy_access_token"
 ```
 
 By default, Friend Activity looks for `.env` while an explicit scrobble health run looks for `.env.scrobble_health`. The search starts in the current directory then continues in each parent directory.
+
+On macOS, Linux and Unix, `SIGHUP` reloads the selected dotenv file. Replacing a value activates the replacement. Removing a key clears the file-provided value and restores the underlying environment or configuration value, then clears affected Spotify authentication caches.
 
 Browser import does not use the parent-directory search when choosing where to write. Without `--env-file`, it writes to `.env` in the current directory.
 
