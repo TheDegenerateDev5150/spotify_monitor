@@ -707,13 +707,15 @@ def test_scrobble_health_notification_matches_regular_alert_format(monkeypatch, 
     monkeypatch.setattr(monitor, "get_date_from_ts", lambda timestamp: f"PLAYED-{int(timestamp)}")
     monkeypatch.setattr(monitor, "print_cur_ts", timestamp_mock)
     monkeypatch.setattr(monitor, "send_notification_channels", delivery_mock)
-    evaluation = monitor.ScrobbleHealthEvaluation("broken", (spotify_play(1000, "First"), spotify_play(1100, "Second")))
+    evaluation = monitor.ScrobbleHealthEvaluation("broken", tuple(spotify_play(timestamp, track) for timestamp, track in ((1000, "First"), (1100, "Second"), (1200, "Third"), (1300, "Fourth"), (1400, "Fifth"), (1500, "Sixth"))))
     monitor.send_scrobble_health_notification("lastfm-user", evaluation, "outage")
     outage_output = capsys.readouterr().out
     outage_body = delivery_mock.call_args.args[2]
-    assert "oldest missing play was recorded by Spotify at PLAYED-1000" in outage_body
-    assert "- PLAYED-1000 | Artist - First" in outage_body
+    assert "The first missing Spotify play was at PLAYED-1000." in outage_body
+    assert "5 most recent missing plays:" in outage_body
+    assert "\n- PLAYED-1000 | Artist - First" not in outage_body
     assert "- PLAYED-1100 | Artist - Second" in outage_body
+    assert "- PLAYED-1500 | Artist - Sixth" in outage_body
     assert outage_body.endswith("Timestamp: ALERT-TIMESTAMP")
     assert "Timestamp: ALERT-TIMESTAMP" not in outage_output
     assert outage_output.index("Sending webhook notification") < outage_output.index("CONSOLE-TIMESTAMP")
