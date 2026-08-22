@@ -19,9 +19,18 @@ jobs:
 
       - name: Build archives from release tag
         shell: bash
+        # The tag reaches the script through the environment so it cannot be interpreted as shell syntax
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
           set -euo pipefail
-          TAG="${{ github.event.release.tag_name }}"
+          TAG="$RELEASE_TAG"
+
+          if [[ ! "$TAG" =~ ^[A-Za-z0-9._-]+$ ]]; then
+            echo "Refusing unsafe release tag: $TAG" >&2
+            exit 1
+          fi
+
           PREFIX="spotify_monitor_${TAG}"
 
           git archive --format=zip --output "${PREFIX}.zip" "${TAG}"
