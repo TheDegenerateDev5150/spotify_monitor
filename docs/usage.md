@@ -457,6 +457,8 @@ spotify_monitor TARGET --flag-file /path/spotify_user_active
 
 For a container, place the file under `/data` so it appears in the host directory. Each concurrently monitored user should have a different flag path.
 
+The flag is written atomically, so a reader never sees a half-written file. Because other tools act on the flag's presence, Spotify Monitor never leaves it in a state that misreports activity. A leftover flag from a previous run is removed at startup, and if it cannot be removed the tool reports the reason and exits instead of starting with a stale "active" marker. If creating or deleting the flag fails later, for example because the path became unwritable or was replaced by a directory, Spotify Monitor prints the error and disables the flag integration for the rest of the run. Monitoring itself continues, so check the output if an external automation stops seeing updates.
+
 <a id="automatic-playback-of-listened-tracks-in-the-spotify-client"></a>
 ## Automatic Playback of Listened Tracks in the Spotify Client
 
