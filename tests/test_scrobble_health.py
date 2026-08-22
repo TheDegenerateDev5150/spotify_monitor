@@ -702,7 +702,7 @@ def test_scrobble_health_monitor_prints_repeated_checks_in_verbose_mode(monkeypa
 # Confirms scrobble alerts format play dates and deliver notifications before the console timestamp
 def test_scrobble_health_notification_matches_regular_alert_format(monkeypatch, capsys):
     timestamp_mock = Mock(side_effect=lambda prefix: print(f"{prefix}CONSOLE-TIMESTAMP"))
-    delivery_mock = Mock(side_effect=lambda *args, **kwargs: print("Sending webhook notification"))
+    delivery_mock = Mock(side_effect=lambda *args, **kwargs: (print("Sending webhook notification") or False, True))
     monkeypatch.setattr(monitor, "get_cur_ts", lambda prefix="": f"{prefix}ALERT-TIMESTAMP")
     monkeypatch.setattr(monitor, "get_date_from_ts", lambda timestamp: f"PLAYED-{int(timestamp)}")
     monkeypatch.setattr(monitor, "print_cur_ts", timestamp_mock)
@@ -722,6 +722,7 @@ def test_scrobble_health_notification_matches_regular_alert_format(monkeypatch, 
     assert "Last.fm profile: https://www.last.fm/user/lastfm-user\nSending webhook notification\n\nTimestamp:" in outage_output
 
     delivery_mock.side_effect = None
+    delivery_mock.return_value = (False, True)
     monitor.send_scrobble_health_notification("lastfm-user", monitor.ScrobbleHealthEvaluation("healthy"), "recovery")
     recovery_output = capsys.readouterr().out
     recovery_body = delivery_mock.call_args.args[2]
@@ -735,7 +736,7 @@ def test_scrobble_health_notification_matches_regular_alert_format(monkeypatch, 
 # Confirms operational alerts include a timestamp and send before the console timestamp
 def test_scrobble_health_monitor_formats_operational_error_notifications(monkeypatch, capsys):
     timestamp_mock = Mock(side_effect=lambda prefix: print(f"{prefix}CONSOLE-TIMESTAMP"))
-    delivery_mock = Mock(side_effect=lambda *args, **kwargs: print("Sending webhook notification"))
+    delivery_mock = Mock(side_effect=lambda *args, **kwargs: (print("Sending webhook notification") or False, True))
     monkeypatch.setattr(monitor, "load_scrobble_health_state", lambda path: {})
     monkeypatch.setattr(monitor, "spotify_get_recent_plays", Mock(side_effect=RuntimeError("temporary failure")))
     monkeypatch.setattr(monitor, "get_cur_ts", lambda prefix="": f"{prefix}ALERT-TIMESTAMP")
@@ -758,7 +759,7 @@ def test_scrobble_health_monitor_formats_operational_error_notifications(monkeyp
 # Confirms a successful comparison resets the operational alert failure counter
 def test_scrobble_health_monitor_resets_operational_error_failures_after_success(monkeypatch, capsys):
     spotify_mock = Mock(side_effect=[RuntimeError("failure 1"), [], RuntimeError("failure 2"), RuntimeError("failure 3"), RuntimeError("failure 4")])
-    delivery_mock = Mock()
+    delivery_mock = Mock(return_value=(False, True))
     monkeypatch.setattr(monitor, "load_scrobble_health_state", lambda path: {})
     monkeypatch.setattr(monitor, "spotify_get_recent_plays", spotify_mock)
     monkeypatch.setattr(monitor, "lastfm_get_recent_scrobbles", lambda username, api_key: [])
@@ -931,6 +932,18 @@ def test_evaluate_scrobble_health_requires_dead_period():
     assert evaluation.status == "suspect"
 
 
+# Confirms competing duplicate candidates use a maximum-cardinality assignment
+def test_evaluate_scrobble_health_matches_overlapping_duplicate_candidates():
+    plays = [spotify_play(100, "Duplicate"), spotify_play(145, "Duplicate")]
+    scrobbles = [lastfm_scrobble(70, "Duplicate"), lastfm_scrobble(120, "Duplicate")]
+
+    evaluation = monitor.evaluate_scrobble_health(plays, scrobbles, now=200, dead_period=10, min_unmatched=1, match_window=30, lookback=200)
+
+    assert evaluation.status == "healthy"
+    assert evaluation.unmatched == ()
+    assert {(play.played_at, scrobble.played_at) for play, scrobble in evaluation.matches} == {(100, 70), (145, 120)}
+
+
 # Confirms recovery needs a match newer than the last Spotify evidence from the outage
 def test_transition_scrobble_health_state_requires_newer_confirmed_match():
     state = {"status": "broken", "last_notification_at": 1000.0, "broken_since": 1000.0, "broken_latest_spotify_at": 900.0}
@@ -946,10 +959,28 @@ def test_transition_scrobble_health_state_requires_newer_confirmed_match():
     assert recovery_action == "recovery"
 
 
+# Confirms failed outage delivery remains pending until a later attempt succeeds
+def test_scrobble_health_notification_state_waits_for_delivery_success():
+    state = {"status": "healthy", "last_notification_at": 0.0, "last_notification_attempt_at": 0.0, "pending_notification": "", "broken_since": 0.0, "broken_latest_spotify_at": 0.0}
+    evaluation = monitor.ScrobbleHealthEvaluation("broken", (spotify_play(900),), latest_spotify_at=900)
+
+    pending_state, first_action = monitor.transition_scrobble_health_state(state, evaluation, now=1000, repeat_interval=86400)
+    failed_state = monitor.record_scrobble_health_notification(pending_state, first_action, False, now=1000)
+    retry_state, retry_action = monitor.transition_scrobble_health_state(failed_state, evaluation, now=1100, repeat_interval=86400)
+    delivered_state = monitor.record_scrobble_health_notification(retry_state, retry_action, True, now=1100)
+
+    assert first_action == "outage"
+    assert failed_state["pending_notification"] == "outage"
+    assert failed_state["last_notification_at"] == 0.0
+    assert retry_action == "outage"
+    assert delivered_state["pending_notification"] == ""
+    assert delivered_state["last_notification_at"] == 1100
+
+
 # Confirms persisted outage state survives a restart without exposing secrets
 def test_scrobble_health_state_round_trip():
     state_path = Path(__file__).resolve().parents[1] / "local" / f"test-scrobble-health-state-{os.getpid()}.json"
-    state = {"status": "broken", "last_notification_at": 1000.0, "broken_since": 900.0, "broken_latest_spotify_at": 850.0}
+    state = {"status": "broken", "last_notification_at": 1000.0, "last_notification_attempt_at": 1050.0, "pending_notification": "outage_reminder", "broken_since": 900.0, "broken_latest_spotify_at": 850.0}
 
     try:
         monitor.save_scrobble_health_state(state_path, state)
