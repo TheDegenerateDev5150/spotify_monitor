@@ -947,6 +947,11 @@ csvfieldnames = ['Date', 'Artist', 'Track', 'Playlist', 'Album', 'Last activity'
 
 CLI_CONFIG_PATH = None
 
+# Tracks relevant keys supplied by the active dotenv file and their pre-dotenv values
+DOTENV_MANAGED_KEYS: set[str] = set()
+DOTENV_BASE_VALUES: dict[str, object] = {}
+PENDING_ACTIVITY_NOTIFICATIONS = []
+
 # to solve the issue: 'SyntaxError: f-string expression part cannot include a backslash'
 nl_ch = "\n"
 
@@ -1000,6 +1005,7 @@ if sys.version_info < (3, 9):
     sys.exit(1)
 
 import importlib.util
+import ast
 import time
 import string
 import textwrap
@@ -1590,9 +1596,33 @@ def _format_config_value(value, prefer_double_quotes: bool) -> str:
     raise TypeError(f"Unsupported config value type: {type(value).__name__}")
 
 
-# Validates Python config content without executing it
+# Returns the setting names declared by the trusted built-in config template
+def _config_allowed_names() -> frozenset[str]:
+    template_tree = ast.parse(CONFIG_BLOCK, "<built-in-config>", "exec")
+    return frozenset(statement.targets[0].id for statement in template_tree.body if isinstance(statement, ast.Assign) and len(statement.targets) == 1 and isinstance(statement.targets[0], ast.Name))
+
+
+# Parses allowlisted literal config assignments without executing file content
+def parse_config_content(content: str, filename: str = "<config>") -> dict[str, Any]:
+    tree = ast.parse(content, filename, "exec")
+    allowed_names = _config_allowed_names()
+    parsed_values: dict[str, Any] = {}
+    for statement in tree.body:
+        if not isinstance(statement, ast.Assign) or len(statement.targets) != 1 or not isinstance(statement.targets[0], ast.Name):
+            raise ValueError(f"Line {getattr(statement, 'lineno', '?')}: only NAME = literal assignments are allowed")
+        name = statement.targets[0].id
+        if name not in allowed_names:
+            raise ValueError(f"Line {statement.lineno}: unsupported configuration setting {name!r}")
+        try:
+            parsed_values[name] = ast.literal_eval(statement.value)
+        except (ValueError, TypeError) as exc:
+            raise ValueError(f"Line {statement.lineno}: {name} must use a literal value") from exc
+    return parsed_values
+
+
+# Validates config content through the same restricted parser used at startup
 def validate_config_content(content: str, filename: str = "<generated-config>") -> None:
-    compile(content, filename, "exec")
+    parse_config_content(content, filename)
 
 
 # Renders CONFIG_BLOCK with current non-secret runtime values and preserved template secrets
@@ -1659,10 +1689,14 @@ def write_config_file(destination, content: str):
                 collision_suffix = "" if collision_index == 0 else f"-{collision_index:02d}"
                 candidate = destination_path.with_name(f"{destination_path.name}.{timestamp}{collision_suffix}.bak")
                 try:
-                    with destination_path.open("rb") as source_file, candidate.open("xb") as backup_file:
+                    backup_descriptor = os.open(candidate, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                    with destination_path.open("rb") as source_file, os.fdopen(backup_descriptor, "wb") as backup_file:
                         shutil.copyfileobj(source_file, backup_file)
                         backup_file.flush()
                         os.fsync(backup_file.fileno())
+                    if os.name == "posix":
+                        source_owner_mode = destination_path.stat().st_mode & 0o600
+                        os.chmod(candidate, source_owner_mode)
                     backup_path = candidate
                     break
                 except FileExistsError:
@@ -1750,6 +1784,41 @@ def update_dotenv_file(destination, updates):
             temporary_path.unlink()
 
     return {"path": str(destination_path), "updated_keys": tuple(key for key, _ in update_items)}
+
+
+# Reads one dotenv file into a validated non-interpolated string mapping
+def read_dotenv_mapping(path: Union[str, Path]) -> dict[str, str]:
+    from dotenv.parser import parse_stream
+    with open(path, "r", encoding="utf-8") as dotenv_file:
+        bindings = list(parse_stream(dotenv_file))
+    malformed = [binding for binding in bindings if binding.error]
+    if malformed:
+        raise ValueError(f"Dotenv syntax error near line {malformed[0].original.line}")
+    return {binding.key: binding.value for binding in bindings if binding.key is not None and binding.value is not None}
+
+
+# Applies supported dotenv settings while retaining values needed when keys are removed
+def apply_dotenv_mapping(values: dict[str, str], initialize_base: bool = False) -> tuple[str, ...]:
+    global DOTENV_MANAGED_KEYS
+    supported_keys = frozenset((*SECRET_KEYS, *ENVIRONMENT_SETTING_KEYS))
+    if initialize_base:
+        for key in supported_keys:
+            DOTENV_BASE_VALUES[key] = os.environ[key] if key in os.environ else globals().get(key)
+    previous_values = {key: globals().get(key) for key in supported_keys}
+    selected_keys = supported_keys.intersection(values)
+    for key in selected_keys:
+        os.environ[key] = values[key]
+        globals()[key] = values[key]
+    for key in DOTENV_MANAGED_KEYS.difference(selected_keys):
+        base_value = DOTENV_BASE_VALUES.get(key)
+        if base_value is None:
+            os.environ.pop(key, None)
+            globals()[key] = ""
+        else:
+            os.environ[key] = str(base_value)
+            globals()[key] = base_value
+    DOTENV_MANAGED_KEYS = set(selected_keys)
+    return tuple(sorted(key for key in supported_keys if globals().get(key) != previous_values[key]))
 
 
 # Raised when a browser cookie cannot be extracted, validated or persisted safely
@@ -2518,20 +2587,53 @@ class Logger(object):
         self.logfile.flush()
 
 
-def flag_file_create():
+# Atomically creates the configured activity flag or disables the integration after a visible failure
+def flag_file_create() -> bool:
+    global FLAG_FILE
+    if not FLAG_FILE:
+        return True
+    flag_path = Path(FLAG_FILE)
+    temporary_path: Optional[Path] = None
     try:
-        with open(FLAG_FILE, "w") as f:
-            f.write("This indicates active streaming by monitored user")
-    except Exception:
-        pass
+        if flag_path.exists() and not flag_path.is_file():
+            raise OSError(f"Destination is not a regular file: {flag_path}")
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", prefix=f".{flag_path.name}.", suffix=".tmp", dir=str(flag_path.parent), delete=False) as temporary_file:
+            temporary_path = Path(temporary_file.name)
+            temporary_file.write("This indicates active streaming by monitored user")
+            temporary_file.flush()
+            os.fsync(temporary_file.fileno())
+        os.replace(temporary_path, flag_path)
+        temporary_path = None
+        return True
+    except Exception as exc:
+        failed_path = FLAG_FILE
+        FLAG_FILE = ""
+        print_recovery_error(exc, "file_write", detail=f"Activity flag integration was disabled after the file could not be created: {failed_path}")
+        print(f"* Activity flag integration was disabled for: {failed_path}")
+        return False
+    finally:
+        if temporary_path is not None and temporary_path.exists():
+            temporary_path.unlink()
 
 
-def flag_file_delete():
+# Deletes the configured activity flag or disables the integration after a visible failure
+def flag_file_delete() -> bool:
+    global FLAG_FILE
+    if not FLAG_FILE:
+        return True
     try:
-        if os.path.exists(FLAG_FILE):
-            os.remove(FLAG_FILE)
-    except Exception:
-        pass
+        flag_path = Path(FLAG_FILE)
+        if flag_path.exists() and not flag_path.is_file():
+            raise OSError(f"Destination is not a regular file: {flag_path}")
+        if flag_path.exists():
+            flag_path.unlink()
+        return True
+    except Exception as exc:
+        failed_path = FLAG_FILE
+        FLAG_FILE = ""
+        print_recovery_error(exc, "file_write", detail=f"Activity flag integration was disabled after the stale file could not be deleted: {failed_path}")
+        print(f"* Activity flag integration was disabled for: {failed_path}")
+        return False
 
 
 # Class used to generate timeout exceptions
@@ -3236,19 +3338,40 @@ def send_webhook(title: str, description: str, notification_type: str = "song", 
 
 
 # Sends one alert through the enabled email and webhook channels
-def send_notification_channels(notification_type: str, subject: str, body: str, body_html: str = "", email_enabled: bool = False, webhook_enabled: Optional[bool] = None, image_url: str = "", subject_short: str = "", body_short: str = "", ntfy_priority: int = 0, ntfy_tags: str = "") -> tuple[bool, bool]:
-    email_attempted = bool(email_enabled)
-    webhook_attempted = webhook_event_enabled(notification_type) if webhook_enabled is None else bool(webhook_enabled)
-    if email_attempted:
+def send_notification_channels(notification_type: str, subject: str, body: str, body_html: str = "", email_enabled: bool = False, webhook_enabled: Optional[bool] = None, image_url: str = "", subject_short: str = "", body_short: str = "", ntfy_priority: int = 0, ntfy_tags: str = "", retain_failures: bool = True) -> tuple[bool, bool]:
+    email_selected = bool(email_enabled)
+    webhook_selected = webhook_event_enabled(notification_type) if webhook_enabled is None else bool(webhook_enabled)
+    email_succeeded = False
+    webhook_succeeded = False
+    if email_selected:
         print(f"Sending email notification to {RECEIVER_EMAIL}")
-        send_email(subject, body, body_html, SMTP_SSL)
-    if webhook_attempted:
+        email_succeeded = send_email(subject, body, body_html, SMTP_SSL) == 0
+    if webhook_selected:
         print("Sending webhook notification")
         use_short_content = NTFY_SHORT is True and normalized_webhook_provider() == "ntfy"
         webhook_subject = (subject_short or subject) if use_short_content else subject
         webhook_body = (body_short or body) if use_short_content else body
-        send_webhook(webhook_subject, webhook_body, notification_type, force=True, image_url=image_url, ntfy_priority=ntfy_priority, ntfy_tags=ntfy_tags)
-    return email_attempted, webhook_attempted
+        webhook_succeeded = send_webhook(webhook_subject, webhook_body, notification_type, force=True, image_url=image_url, ntfy_priority=ntfy_priority, ntfy_tags=ntfy_tags) == 0
+    if retain_failures and notification_type in ("active", "inactive") and ((email_selected and not email_succeeded) or (webhook_selected and not webhook_succeeded)):
+        pending = {"notification_type": notification_type, "subject": subject, "body": body, "body_html": body_html, "email_enabled": email_selected and not email_succeeded, "webhook_enabled": webhook_selected and not webhook_succeeded, "image_url": image_url, "subject_short": subject_short, "body_short": body_short, "ntfy_priority": ntfy_priority, "ntfy_tags": ntfy_tags}
+        if not any(item["notification_type"] == notification_type and item["subject"] == subject for item in PENDING_ACTIVITY_NOTIFICATIONS):
+            if len(PENDING_ACTIVITY_NOTIFICATIONS) >= 10:
+                PENDING_ACTIVITY_NOTIFICATIONS.pop(0)
+            PENDING_ACTIVITY_NOTIFICATIONS.append(pending)
+    return email_succeeded, webhook_succeeded
+
+
+# Retries retained activity transitions once per monitoring check until each channel succeeds
+def retry_pending_activity_notifications() -> None:
+    pending_notifications = list(PENDING_ACTIVITY_NOTIFICATIONS)
+    PENDING_ACTIVITY_NOTIFICATIONS.clear()
+    for pending in pending_notifications:
+        print(f"Retrying pending {pending['notification_type']} notification")
+        email_succeeded, webhook_succeeded = send_notification_channels(pending["notification_type"], pending["subject"], pending["body"], pending["body_html"], pending["email_enabled"], pending["webhook_enabled"], image_url=pending["image_url"], subject_short=pending["subject_short"], body_short=pending["body_short"], ntfy_priority=pending["ntfy_priority"], ntfy_tags=pending["ntfy_tags"], retain_failures=False)
+        pending["email_enabled"] = pending["email_enabled"] and not email_succeeded
+        pending["webhook_enabled"] = pending["webhook_enabled"] and not webhook_succeeded
+        if pending["email_enabled"] or pending["webhook_enabled"]:
+            PENDING_ACTIVITY_NOTIFICATIONS.append(pending)
 
 
 # Initializes the CSV file
@@ -3489,6 +3612,7 @@ def reload_secrets_signal_handler(sig, frame):
     suffix = "\n" if TOKEN_SOURCE == 'client' else ""
     auth_values_before = (REFRESH_TOKEN, SP_DC_COOKIE, SP_APP_CLIENT_ID, SP_APP_CLIENT_SECRET, SPOTIFY_SCROBBLE_CLIENT_ID, SPOTIFY_SCROBBLE_REDIRECT_URI, SPOTIFY_SCROBBLE_REFRESH_TOKEN, DEVICE_ID, SYSTEM_ID, USER_URI_ID)
     webhook_url_changed = False
+    dotenv_changed_keys: tuple[str, ...] = ()
 
     # disable autoscan if DOTENV_FILE set to none
     env_path = None
@@ -3498,28 +3622,27 @@ def reload_secrets_signal_handler(sig, frame):
         # reload .env if python-dotenv is installed
         default_dotenv_filename = SCROBBLE_HEALTH_DOTENV_FILENAME if MONITOR_MODE == "scrobble_health" else DEFAULT_DOTENV_FILENAME
         try:
-            from dotenv import load_dotenv, find_dotenv
+            from dotenv import find_dotenv
             if DOTENV_FILE:
                 env_path = DOTENV_FILE
             else:
                 env_path = find_dotenv(filename=default_dotenv_filename)
             if env_path:
-                load_dotenv(env_path, override=True, interpolate=False)
+                dotenv_changed_keys = apply_dotenv_mapping(read_dotenv_mapping(env_path))
             else:
                 print(f"* No {default_dotenv_filename if not DOTENV_FILE else 'dotenv'} file found, skipping env-var reload{suffix}")
         except ImportError:
             env_path = None
             print(f"* python-dotenv not installed, skipping env-var reload{suffix}")
+        except (OSError, UnicodeDecodeError, ValueError) as exc:
+            print_recovery_error(exc, "config_invalid", detail=f"Dotenv file '{env_path}' could not be reloaded: {exc}")
+            env_path = None
 
     if env_path:
-        for environment_key in (*SECRET_KEYS, *ENVIRONMENT_SETTING_KEYS):
-            old_val = globals().get(environment_key)
-            val = os.getenv(environment_key)
-            if val is not None and val != old_val:
-                globals()[environment_key] = val
-                if environment_key == "WEBHOOK_URL":
-                    webhook_url_changed = True
-                print(f"* Reloaded {environment_key} from {env_path}{suffix}")
+        for environment_key in dotenv_changed_keys:
+            if environment_key == "WEBHOOK_URL":
+                webhook_url_changed = True
+            print(f"* Reloaded {environment_key} from {env_path}{suffix}")
 
     if TOKEN_SOURCE == 'client':
 
@@ -4349,6 +4472,79 @@ def scrobble_time_distance(play: SpotifyPlay, scrobble: LastfmScrobble) -> float
     return min(candidates)
 
 
+@dataclass
+class _FlowEdge:
+    to: int
+    reverse: int
+    capacity: int
+    cost: float
+
+
+# Adds one forward and reverse edge to a residual flow graph
+def _add_flow_edge(graph: List[List[_FlowEdge]], source: int, destination: int, capacity: int, cost: float) -> None:
+    graph[source].append(_FlowEdge(destination, len(graph[destination]), capacity, cost))
+    graph[destination].append(_FlowEdge(source, len(graph[source]) - 1, 0, -cost))
+
+
+# Finds a maximum-cardinality minimum-distance matching between plays and scrobbles
+def match_scrobble_plays(plays: Sequence[SpotifyPlay], scrobbles: Sequence[LastfmScrobble], match_window: float) -> List[tuple[int, int]]:
+    play_count = len(plays)
+    scrobble_count = len(scrobbles)
+    source = 0
+    first_play = 1
+    first_scrobble = first_play + play_count
+    sink = first_scrobble + scrobble_count
+    graph: List[List[_FlowEdge]] = [[] for _ in range(sink + 1)]
+    for play_index in range(play_count):
+        _add_flow_edge(graph, source, first_play + play_index, 1, 0.0)
+    for scrobble_index in range(scrobble_count):
+        _add_flow_edge(graph, first_scrobble + scrobble_index, sink, 1, 0.0)
+    scrobble_keys = [(normalize_scrobble_text(scrobble.artist), normalize_scrobble_text(scrobble.track)) for scrobble in scrobbles]
+    for play_index, play in enumerate(plays):
+        play_key = (normalize_scrobble_text(play.artist), normalize_scrobble_text(play.track))
+        for scrobble_index, scrobble in enumerate(scrobbles):
+            distance = scrobble_time_distance(play, scrobble)
+            if scrobble_keys[scrobble_index] == play_key and distance <= match_window:
+                _add_flow_edge(graph, first_play + play_index, first_scrobble + scrobble_index, 1, distance)
+
+    while True:
+        distances = [float("inf")] * len(graph)
+        previous_nodes = [-1] * len(graph)
+        previous_edges = [-1] * len(graph)
+        distances[source] = 0.0
+        for _ in range(len(graph) - 1):
+            changed = False
+            for node, edges in enumerate(graph):
+                if distances[node] == float("inf"):
+                    continue
+                for edge_index, edge in enumerate(edges):
+                    candidate_distance = distances[node] + edge.cost
+                    if edge.capacity > 0 and candidate_distance < distances[edge.to] - 1e-12:
+                        distances[edge.to] = candidate_distance
+                        previous_nodes[edge.to] = node
+                        previous_edges[edge.to] = edge_index
+                        changed = True
+            if not changed:
+                break
+        if previous_nodes[sink] < 0:
+            break
+        node = sink
+        while node != source:
+            previous_node = previous_nodes[node]
+            edge = graph[previous_node][previous_edges[node]]
+            edge.capacity -= 1
+            graph[node][edge.reverse].capacity += 1
+            node = previous_node
+
+    matches: List[tuple[int, int]] = []
+    for play_index in range(play_count):
+        for edge in graph[first_play + play_index]:
+            if first_scrobble <= edge.to < sink and edge.capacity == 0:
+                matches.append((play_index, edge.to - first_scrobble))
+                break
+    return matches
+
+
 # Compares recent completed Spotify plays with Last.fm and returns trailing unmatched evidence
 def evaluate_scrobble_health(spotify_plays: Sequence[SpotifyPlay], lastfm_scrobbles: Sequence[LastfmScrobble], now: Optional[float] = None, dead_period: Optional[int] = None, min_unmatched: Optional[int] = None, match_window: Optional[int] = None, lookback: Optional[int] = None) -> ScrobbleHealthEvaluation:
     current_time = time.time() if now is None else now
@@ -4362,18 +4558,9 @@ def evaluate_scrobble_health(spotify_plays: Sequence[SpotifyPlay], lastfm_scrobb
     if not recent_plays:
         latest_lastfm = max((scrobble.played_at for scrobble in recent_scrobbles), default=0)
         return ScrobbleHealthEvaluation("idle", latest_lastfm_at=latest_lastfm)
-    unused_scrobbles = set(range(len(recent_scrobbles)))
-    matched_play_indexes: set[int] = set()
-    matched_pairs: List[tuple[SpotifyPlay, LastfmScrobble]] = []
-    for play_index, play in enumerate(recent_plays):
-        play_key = (normalize_scrobble_text(play.artist), normalize_scrobble_text(play.track))
-        candidates = [index for index in unused_scrobbles if (normalize_scrobble_text(recent_scrobbles[index].artist), normalize_scrobble_text(recent_scrobbles[index].track)) == play_key and scrobble_time_distance(play, recent_scrobbles[index]) <= selected_match_window]
-        if not candidates:
-            continue
-        matched_index = min(candidates, key=lambda index: scrobble_time_distance(play, recent_scrobbles[index]))
-        unused_scrobbles.remove(matched_index)
-        matched_play_indexes.add(play_index)
-        matched_pairs.append((play, recent_scrobbles[matched_index]))
+    matched_indexes = match_scrobble_plays(recent_plays, recent_scrobbles, selected_match_window)
+    matched_play_indexes = {play_index for play_index, _ in matched_indexes}
+    matched_pairs = [(recent_plays[play_index], recent_scrobbles[scrobble_index]) for play_index, scrobble_index in matched_indexes]
     latest_match_at = max((recent_plays[index].played_at for index in matched_play_indexes), default=0)
     unmatched = tuple(play for index, play in enumerate(recent_plays) if index not in matched_play_indexes and play.played_at > latest_match_at)
     latest_spotify = recent_plays[-1].played_at
@@ -4424,7 +4611,7 @@ def render_scrobble_history_comparison(spotify_plays: Sequence[SpotifyPlay], las
 
 # Loads a persisted scrobble health state while ignoring malformed or unsupported data
 def load_scrobble_health_state(path: Union[str, Path]) -> dict:
-    default_state = {"status": "unknown", "last_notification_at": 0.0, "broken_since": 0.0, "broken_latest_spotify_at": 0.0}
+    default_state = {"status": "unknown", "last_notification_at": 0.0, "last_notification_attempt_at": 0.0, "pending_notification": "", "broken_since": 0.0, "broken_latest_spotify_at": 0.0}
     state_path = Path(path)
     if not state_path.is_file():
         return default_state
@@ -4437,7 +4624,9 @@ def load_scrobble_health_state(path: Union[str, Path]) -> dict:
     state = dict(default_state)
     if payload.get("status") in ("unknown", "idle", "healthy", "suspect", "broken"):
         state["status"] = payload["status"]
-    for key in ("last_notification_at", "broken_since", "broken_latest_spotify_at"):
+    if payload.get("pending_notification") in ("", "outage", "outage_reminder", "recovery"):
+        state["pending_notification"] = payload["pending_notification"]
+    for key in ("last_notification_at", "last_notification_attempt_at", "broken_since", "broken_latest_spotify_at"):
         value = payload.get(key)
         if isinstance(value, (int, float)) and not isinstance(value, bool) and value >= 0:
             state[key] = float(value)
@@ -4467,29 +4656,48 @@ def transition_scrobble_health_state(state: dict, evaluation: ScrobbleHealthEval
     selected_repeat = SCROBBLE_HEALTH_REPEAT_INTERVAL if repeat_interval is None else repeat_interval
     next_state = dict(state)
     previous_status = state.get("status", "unknown")
-    action = ""
+    pending_notification = str(state.get("pending_notification", ""))
     if evaluation.status == "broken":
         if previous_status != "broken":
             next_state["broken_since"] = current_time
-            action = "outage"
-        elif selected_repeat > 0 and current_time - float(state.get("last_notification_at", 0)) >= selected_repeat:
-            action = "outage_reminder"
+            pending_notification = "outage"
+            next_state["last_notification_attempt_at"] = 0.0
+        elif not pending_notification and selected_repeat > 0 and float(state.get("last_notification_at", 0)) > 0 and current_time - float(state.get("last_notification_at", 0)) >= selected_repeat:
+            pending_notification = "outage_reminder"
+            next_state["last_notification_attempt_at"] = 0.0
         next_state["status"] = "broken"
         next_state["broken_latest_spotify_at"] = max(float(state.get("broken_latest_spotify_at", 0)), evaluation.latest_spotify_at)
     elif previous_status == "broken":
         confirmed_recovery = evaluation.status == "healthy" and evaluation.latest_match_at > float(state.get("broken_latest_spotify_at", 0))
         if confirmed_recovery:
             next_state.update({"status": "healthy", "broken_since": 0.0, "broken_latest_spotify_at": 0.0})
-            action = "recovery"
+            pending_notification = "recovery"
+            next_state["last_notification_attempt_at"] = 0.0
     else:
         next_state["status"] = evaluation.status
-    if action:
-        next_state["last_notification_at"] = current_time
+    next_state["pending_notification"] = pending_notification
+    action = pending_notification
+    if action in ("outage", "outage_reminder") and evaluation.status != "broken":
+        action = ""
     return next_state, action
 
 
-# Sends one scrobble outage or recovery message through the configured channels
-def send_scrobble_health_notification(username: str, evaluation: ScrobbleHealthEvaluation, action: str) -> None:
+# Records one notification attempt while keeping failed deliveries pending for the next check
+def record_scrobble_health_notification(state: dict, action: str, delivered: bool, now: Optional[float] = None) -> dict:
+    next_state = dict(state)
+    if not action:
+        return next_state
+    current_time = time.time() if now is None else now
+    next_state["last_notification_attempt_at"] = current_time
+    if delivered:
+        next_state["last_notification_at"] = current_time
+        if next_state.get("pending_notification") == action:
+            next_state["pending_notification"] = ""
+    return next_state
+
+
+# Sends one scrobble outage or recovery message and reports whether required delivery completed
+def send_scrobble_health_notification(username: str, evaluation: ScrobbleHealthEvaluation, action: str) -> bool:
     profile_url = f"https://www.last.fm/user/{quote(username, safe='')}"
     settings_url = "https://www.last.fm/settings/applications"
     notification_timestamp = get_cur_ts()
@@ -4509,8 +4717,10 @@ def send_scrobble_health_notification(username: str, evaluation: ScrobbleHealthE
         ntfy_tags = "warning,musical_note"
     body = f"{message}\n\nTimestamp: {notification_timestamp}"
     print(f"* {subject}\n{message}")
-    send_notification_channels("scrobble_health", subject, body, email_enabled=SCROBBLE_HEALTH_NOTIFICATION, ntfy_priority=4, ntfy_tags=ntfy_tags)
+    delivery_selected = SCROBBLE_HEALTH_NOTIFICATION or webhook_event_enabled("scrobble_health")
+    email_succeeded, webhook_succeeded = send_notification_channels("scrobble_health", subject, body, email_enabled=SCROBBLE_HEALTH_NOTIFICATION, ntfy_priority=4, ntfy_tags=ntfy_tags)
     print_cur_ts("\nTimestamp:\t\t\t")
+    return not delivery_selected or email_succeeded or webhook_succeeded
 
 
 # Runs the continuous Spotify-to-Last.fm scrobble health comparison
@@ -4533,7 +4743,8 @@ def spotify_monitor_scrobble_health(username: str, state_path: Union[str, Path])
             evaluation = evaluate_scrobble_health(spotify_plays, lastfm_scrobbles)
             next_state, action = transition_scrobble_health_state(state, evaluation)
             if action:
-                send_scrobble_health_notification(username, evaluation, action)
+                delivered = send_scrobble_health_notification(username, evaluation, action)
+                next_state = record_scrobble_health_notification(next_state, action, delivered)
             if next_state != state:
                 save_scrobble_health_state(state_path, next_state)
                 state = next_state
@@ -4574,8 +4785,8 @@ def spotify_monitor_scrobble_health(username: str, state_path: Union[str, Path])
             if operational_error_failures >= SCROBBLE_HEALTH_ERROR_NOTIFICATION_FAILURES and not operational_error_notified and notifications_enabled:
                 subject = "spotify_monitor: scrobble health check error"
                 body = f"The Spotify-to-Last.fm comparison failed {operational_error_failures} consecutive times. Existing outage state was preserved.\n\n{recovery_advice.summary}\nTo fix: {recovery_advice.fix}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
-                send_notification_channels("error", subject, body, email_enabled=ERROR_NOTIFICATION)
-                operational_error_notified = True
+                email_succeeded, webhook_succeeded = send_notification_channels("error", subject, body, email_enabled=ERROR_NOTIFICATION)
+                operational_error_notified = email_succeeded or webhook_succeeded
             print_cur_ts("Timestamp:\t\t\t")
             time.sleep(SPOTIFY_ERROR_INTERVAL)
 
@@ -6063,17 +6274,13 @@ def find_scrobble_health_config_file(cli_path=None):
     return _find_config_file(cli_path, SCROBBLE_HEALTH_CONFIG_FILENAME)
 
 
-# Loads one UTF-8 Python config atomically and optionally collects structured failures
+# Loads one UTF-8 literal config atomically and optionally collects structured failures
 def load_config_file(config_path, namespace=None, error_out=None, report_errors=True):
     target_namespace = globals() if namespace is None else namespace
     try:
         with open(config_path, "r", encoding="utf-8") as config_file:
             source = config_file.read()
-        compiled = compile(source, str(config_path), "exec")
-        candidate_namespace = dict(target_namespace)
-        exec(compiled, candidate_namespace)
-        candidate_namespace.pop("__builtins__", None)
-        target_namespace.update(candidate_namespace)
+        target_namespace.update(parse_config_content(source, str(config_path)))
         return True
     except SyntaxError as exc:
         details = [f"Config file '{config_path}' has invalid Python syntax"]
@@ -6099,6 +6306,16 @@ def load_config_file(config_path, namespace=None, error_out=None, report_errors=
         if report_errors:
             print(f"* Error: Config file '{config_path}' is not valid UTF-8")
             print("To fix: Save the file as UTF-8 then retry.")
+            print(f"Guide: {CONFIG_GUIDE_URL}")
+        return False
+    except ValueError as exc:
+        detail = f"Config file '{config_path}' contains unsupported content: {exc}"
+        advice = classify_recovery_error(exc, "config_invalid", detail)
+        if error_out is not None:
+            error_out.append(advice)
+        if report_errors:
+            print(f"* Error: {detail}")
+            print("To fix: Use only documented NAME = literal assignments from the generated configuration then retry.")
             print(f"Guide: {CONFIG_GUIDE_URL}")
         return False
     except Exception as exc:
@@ -6200,6 +6417,26 @@ def build_log_path(base_path, suffix: str) -> Path:
     return log_path
 
 
+# Returns all type and range errors in settings that control runtime timing or counts
+def runtime_configuration_errors() -> List[str]:
+    errors: List[str] = []
+    positive_numbers = (("SPOTIFY_CHECK_INTERVAL", SPOTIFY_CHECK_INTERVAL), ("SPOTIFY_ERROR_INTERVAL", SPOTIFY_ERROR_INTERVAL), ("SPOTIFY_INACTIVITY_CHECK", SPOTIFY_INACTIVITY_CHECK), ("SPOTIFY_DISAPPEARED_CHECK_INTERVAL", SPOTIFY_DISAPPEARED_CHECK_INTERVAL), ("SCROBBLE_HEALTH_CHECK_INTERVAL", SCROBBLE_HEALTH_CHECK_INTERVAL), ("SCROBBLE_HEALTH_DEAD_PERIOD", SCROBBLE_HEALTH_DEAD_PERIOD), ("SCROBBLE_HEALTH_MATCH_WINDOW", SCROBBLE_HEALTH_MATCH_WINDOW), ("SCROBBLE_HEALTH_LOOKBACK", SCROBBLE_HEALTH_LOOKBACK), ("CHECK_INTERNET_TIMEOUT", CHECK_INTERNET_TIMEOUT), ("TOKEN_RETRY_TIMEOUT", TOKEN_RETRY_TIMEOUT))
+    nonnegative_numbers = (("LIVENESS_CHECK_INTERVAL", LIVENESS_CHECK_INTERVAL), ("SCROBBLE_HEALTH_REPEAT_INTERVAL", SCROBBLE_HEALTH_REPEAT_INTERVAL), ("SP_USER_GOT_OFFLINE_DELAY_BEFORE_PAUSE", SP_USER_GOT_OFFLINE_DELAY_BEFORE_PAUSE))
+    positive_integers = (("SCROBBLE_HEALTH_MIN_UNMATCHED", SCROBBLE_HEALTH_MIN_UNMATCHED), ("ERROR_500_NUMBER_LIMIT", ERROR_500_NUMBER_LIMIT), ("ERROR_NETWORK_ISSUES_NUMBER_LIMIT", ERROR_NETWORK_ISSUES_NUMBER_LIMIT), ("TOKEN_MAX_RETRIES", TOKEN_MAX_RETRIES))
+    for name, value in positive_numbers:
+        if not isinstance(value, (int, float)) or isinstance(value, bool) or value <= 0:
+            errors.append(f"{name} must be a number greater than zero, not {value!r}")
+    for name, value in nonnegative_numbers:
+        if not isinstance(value, (int, float)) or isinstance(value, bool) or value < 0:
+            errors.append(f"{name} must be a number zero or greater, not {value!r}")
+    for name, value in positive_integers:
+        if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+            errors.append(f"{name} must be an integer greater than zero, not {value!r}")
+    if not isinstance(SMTP_PORT, int) or isinstance(SMTP_PORT, bool) or not 1 <= SMTP_PORT <= 65535:
+        errors.append(f"SMTP_PORT must be an integer from 1 through 65535, not {SMTP_PORT!r}")
+    return errors
+
+
 # Validates effective config values and configured file destinations without writing them
 def doctor_check_configuration(config_path=None, env_path=None, startup_checks: Sequence[DoctorCheck] = (), target_value=None, lastfm_username=None) -> List[DoctorCheck]:
     checks = list(startup_checks)
@@ -6229,14 +6466,9 @@ def doctor_check_configuration(config_path=None, env_path=None, startup_checks: 
             advice = classify_recovery_error(context="config_invalid", detail="TOTP_VERSION must be a positive integer plus TOTP_SECRET_CIPHER_BYTES a non-empty sequence of integers; refresh them with debug/spotify_monitor_secret_grabber.py if Spotify rotated the web-player secret")
             checks.append(make_doctor_check("Configuration", "FAIL", "Web-player TOTP parameters are invalid", advice.detail, advice))
 
-    numeric_values = (("SPOTIFY_CHECK_INTERVAL", SPOTIFY_CHECK_INTERVAL, 1, None), ("SPOTIFY_ERROR_INTERVAL", SPOTIFY_ERROR_INTERVAL, 0, None), ("SPOTIFY_INACTIVITY_CHECK", SPOTIFY_INACTIVITY_CHECK, 0, None), ("SPOTIFY_DISAPPEARED_CHECK_INTERVAL", SPOTIFY_DISAPPEARED_CHECK_INTERVAL, 0, None), ("SCROBBLE_HEALTH_CHECK_INTERVAL", SCROBBLE_HEALTH_CHECK_INTERVAL, 1, None), ("SCROBBLE_HEALTH_DEAD_PERIOD", SCROBBLE_HEALTH_DEAD_PERIOD, 1, None), ("SCROBBLE_HEALTH_MIN_UNMATCHED", SCROBBLE_HEALTH_MIN_UNMATCHED, 1, None), ("SCROBBLE_HEALTH_MATCH_WINDOW", SCROBBLE_HEALTH_MATCH_WINDOW, 1, None), ("SCROBBLE_HEALTH_LOOKBACK", SCROBBLE_HEALTH_LOOKBACK, 1, None), ("SCROBBLE_HEALTH_REPEAT_INTERVAL", SCROBBLE_HEALTH_REPEAT_INTERVAL, 0, None), ("SMTP_PORT", SMTP_PORT, 1, 65535))
-    invalid_numeric = []
-    for name, value, minimum, maximum in numeric_values:
-        valid = isinstance(value, (int, float)) and not isinstance(value, bool) and value >= minimum and (maximum is None or value <= maximum)
-        if not valid:
-            invalid_numeric.append(f"{name}={value!r}")
-    if invalid_numeric:
-        advice = classify_recovery_error(context="config_invalid", detail="Invalid numeric settings: " + ", ".join(invalid_numeric))
+    numeric_errors = runtime_configuration_errors()
+    if numeric_errors:
+        advice = classify_recovery_error(context="config_invalid", detail="Invalid numeric settings: " + "; ".join(numeric_errors))
         checks.append(make_doctor_check("Configuration", "FAIL", "One or more numeric settings are invalid", advice.detail, advice))
     else:
         checks.append(make_doctor_check("Configuration", "PASS", "Numeric intervals and ports are valid"))
@@ -8254,6 +8486,7 @@ def spotify_monitor_friend_uri(user_uri_id, tracks, csv_file_name):
 
     # Start loop
     while True:
+        retry_pending_activity_notifications()
         debug_print(f"Loop tick: token_source={TOKEN_SOURCE}, check_interval={SPOTIFY_CHECK_INTERVAL}, error_interval={SPOTIFY_ERROR_INTERVAL}")
 
         # Sometimes Spotify network functions halt even though we specified the timeout
@@ -8300,9 +8533,9 @@ def spotify_monitor_friend_uri(user_uri_id, tracks, csv_file_name):
                     m_subject = f"spotify_monitor: client or refresh token may be invalid or expired! (uri: {user_uri_id})"
                     m_body = f"Client or refresh token may be invalid or expired!\n{safe_error}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
                     m_body_html = f"<html><head></head><body>Client or refresh token may be invalid or expired!<br>{escape(safe_error)}{get_cur_ts('<br><br>Timestamp: ')}</body></html>"
-                    email_attempted, webhook_attempted = send_notification_channels("error", m_subject, m_body, m_body_html, ERROR_NOTIFICATION and not email_sent, webhook_event_enabled("error") and not webhook_sent)
-                    email_sent = email_sent or email_attempted
-                    webhook_sent = webhook_sent or webhook_attempted
+                    email_succeeded, webhook_succeeded = send_notification_channels("error", m_subject, m_body, m_body_html, ERROR_NOTIFICATION and not email_sent, webhook_event_enabled("error") and not webhook_sent)
+                    email_sent = email_sent or email_succeeded
+                    webhook_sent = webhook_sent or webhook_succeeded
 
             elif TOKEN_SOURCE == 'cookie' and advice.code == "auth.cookie_invalid":
                 if (ERROR_NOTIFICATION and not email_sent) or (webhook_event_enabled("error") and not webhook_sent):
@@ -8310,9 +8543,9 @@ def spotify_monitor_friend_uri(user_uri_id, tracks, csv_file_name):
                     m_subject = f"spotify_monitor: sp_dc may be invalid/expired or Spotify has broken sth again! (uri: {user_uri_id})"
                     m_body = f"sp_dc may be invalid/expired or Spotify has broken sth again!\n{safe_error}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
                     m_body_html = f"<html><head></head><body>sp_dc may be invalid/expired or Spotify has broken sth again!<br>{escape(safe_error)}{get_cur_ts('<br><br>Timestamp: ')}</body></html>"
-                    email_attempted, webhook_attempted = send_notification_channels("error", m_subject, m_body, m_body_html, ERROR_NOTIFICATION and not email_sent, webhook_event_enabled("error") and not webhook_sent)
-                    email_sent = email_sent or email_attempted
-                    webhook_sent = webhook_sent or webhook_attempted
+                    email_succeeded, webhook_succeeded = send_notification_channels("error", m_subject, m_body, m_body_html, ERROR_NOTIFICATION and not email_sent, webhook_event_enabled("error") and not webhook_sent)
+                    email_sent = email_sent or email_succeeded
+                    webhook_sent = webhook_sent or webhook_succeeded
 
             print_cur_ts("Timestamp:\t\t\t")
             time.sleep(SPOTIFY_ERROR_INTERVAL)
@@ -8591,9 +8824,9 @@ def spotify_monitor_friend_uri(user_uri_id, tracks, csv_file_name):
                                     m_subject = f"spotify_monitor: client or refresh token may be invalid or expired! (uri: {user_uri_id})"
                                     m_body = f"Client or refresh token may be invalid or expired!\n{safe_error}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
                                     m_body_html = f"<html><head></head><body>Client or refresh token may be invalid or expired!<br>{escape(safe_error)}{get_cur_ts('<br><br>Timestamp: ')}</body></html>"
-                                    email_attempted, webhook_attempted = send_notification_channels("error", m_subject, m_body, m_body_html, ERROR_NOTIFICATION and not email_sent, webhook_event_enabled("error") and not webhook_sent)
-                                    email_sent = email_sent or email_attempted
-                                    webhook_sent = webhook_sent or webhook_attempted
+                                    email_succeeded, webhook_succeeded = send_notification_channels("error", m_subject, m_body, m_body_html, ERROR_NOTIFICATION and not email_sent, webhook_event_enabled("error") and not webhook_sent)
+                                    email_sent = email_sent or email_succeeded
+                                    webhook_sent = webhook_sent or webhook_succeeded
 
                             elif TOKEN_SOURCE == 'cookie' and advice.code == "auth.cookie_invalid":
                                 if (ERROR_NOTIFICATION and not email_sent) or (webhook_event_enabled("error") and not webhook_sent):
@@ -8601,9 +8834,9 @@ def spotify_monitor_friend_uri(user_uri_id, tracks, csv_file_name):
                                     m_subject = f"spotify_monitor: sp_dc may be invalid/expired or Spotify has broken sth again! (uri: {user_uri_id})"
                                     m_body = f"sp_dc may be invalid/expired or Spotify has broken sth again!\n{safe_error}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
                                     m_body_html = f"<html><head></head><body>sp_dc may be invalid/expired or Spotify has broken sth again!<br>{escape(safe_error)}{get_cur_ts('<br><br>Timestamp: ')}</body></html>"
-                                    email_attempted, webhook_attempted = send_notification_channels("error", m_subject, m_body, m_body_html, ERROR_NOTIFICATION and not email_sent, webhook_event_enabled("error") and not webhook_sent)
-                                    email_sent = email_sent or email_attempted
-                                    webhook_sent = webhook_sent or webhook_attempted
+                                    email_succeeded, webhook_succeeded = send_notification_channels("error", m_subject, m_body, m_body_html, ERROR_NOTIFICATION and not email_sent, webhook_event_enabled("error") and not webhook_sent)
+                                    email_sent = email_sent or email_succeeded
+                                    webhook_sent = webhook_sent or webhook_succeeded
 
                             print_cur_ts("Timestamp:\t\t\t")
                         time.sleep(SPOTIFY_ERROR_INTERVAL)
@@ -8898,9 +9131,9 @@ def spotify_monitor_friend_uri(user_uri_id, tracks, csv_file_name):
                         m_body_short = build_short_ntfy_body(sp_track, sp_artist, sp_album, sp_playlist if is_playlist else "", playlist_suffix)
 
                         if ACTIVE_NOTIFICATION or webhook_event_enabled("active"):
-                            email_attempted, webhook_attempted = send_notification_channels("active", m_subject, m_body, m_body_html, ACTIVE_NOTIFICATION, image_url=sp_playlist_image_url or sp_album_image_url, subject_short=m_subject_short, body_short=m_body_short)
-                            email_sent = email_sent or email_attempted
-                            webhook_sent = webhook_sent or webhook_attempted
+                            email_succeeded, webhook_succeeded = send_notification_channels("active", m_subject, m_body, m_body_html, ACTIVE_NOTIFICATION, image_url=sp_playlist_image_url or sp_album_image_url, subject_short=m_subject_short, body_short=m_body_short)
+                            email_sent = email_sent or email_succeeded
+                            webhook_sent = webhook_sent or webhook_succeeded
 
                     on_the_list = False
                     if sp_track.upper() in tracks_upper or sp_playlist.upper() in tracks_upper or sp_album.upper() in tracks_upper:
@@ -8934,9 +9167,9 @@ def spotify_monitor_friend_uri(user_uri_id, tracks, csv_file_name):
                         m_body = f"Last played: {sp_artist} - {sp_track}\nDuration: {display_time(sp_track_duration)}{played_for_m_body}{playlist_m_body}\nAlbum: {sp_album}{context_m_body}{music_section_text}{lyrics_section_text}User plays song on LOOP ({song_on_loop} times)\n\nSongs played: {listened_songs} ({calculate_timespan(int(sp_ts), int(sp_active_ts_start))})\n\nLast activity: {get_date_from_ts(sp_ts)}{get_cur_ts(nl_ch + 'Timestamp: ')}"
                         m_body_html = f"<html><head></head><body>Last played: <b><a href=\"{sp_artist_url}\">{escape(sp_artist)}</a> - <a href=\"{sp_track_url}\">{escape(sp_track)}</a></b><br>Duration: {display_time(sp_track_duration)}{played_for_m_body_html}{playlist_m_body_html}<br>Album: <a href=\"{sp_album_url}\">{escape(sp_album)}</a>{context_m_body_html}{music_section_html}{lyrics_section_html}User plays song on LOOP (<b>{song_on_loop}</b> times)<br><br>Songs played: {listened_songs} ({calculate_timespan(int(sp_ts), int(sp_active_ts_start))})<br><br>Last activity: {get_date_from_ts(sp_ts)}{get_cur_ts('<br>Timestamp: ')}</body></html>"
                         m_body_short = build_short_ntfy_body(sp_track, sp_artist, sp_album, sp_playlist if is_playlist else "", playlist_suffix)
-                        email_attempted, webhook_attempted = send_notification_channels("loop", m_subject, m_body, m_body_html, SONG_ON_LOOP_NOTIFICATION and not email_sent, webhook_event_enabled("loop") and not webhook_sent, image_url=sp_album_image_url, subject_short=m_subject_short, body_short=m_body_short)
-                        email_sent = email_sent or email_attempted
-                        webhook_sent = webhook_sent or webhook_attempted
+                        email_succeeded, webhook_succeeded = send_notification_channels("loop", m_subject, m_body, m_body_html, SONG_ON_LOOP_NOTIFICATION and not email_sent, webhook_event_enabled("loop") and not webhook_sent, image_url=sp_album_image_url, subject_short=m_subject_short, body_short=m_body_short)
+                        email_sent = email_sent or email_succeeded
+                        webhook_sent = webhook_sent or webhook_succeeded
 
                     email_song_enabled = ((TRACK_NOTIFICATION and on_the_list) or SONG_NOTIFICATION) and not email_sent
                     webhook_song_enabled = ((webhook_event_enabled("track") and on_the_list) or webhook_event_enabled("song")) and not webhook_sent
@@ -8967,9 +9200,9 @@ def spotify_monitor_friend_uri(user_uri_id, tracks, csv_file_name):
                         m_body_html = f"<html><head></head><body>Last played: <b><a href=\"{sp_artist_url}\">{escape(sp_artist)}</a> - <a href=\"{sp_track_url}\">{escape(sp_track)}</a></b><br>Duration: {display_time(sp_track_duration)}{played_for_m_body_html}{playlist_m_body_html}<br>Album: <a href=\"{sp_album_url}\">{escape(sp_album)}</a>{context_m_body_html}{music_section_html}{lyrics_section_html}Songs played: {listened_songs} ({calculate_timespan(int(sp_ts), int(sp_active_ts_start))})<br><br>Last activity: {get_date_from_ts(sp_ts)}{get_cur_ts('<br>Timestamp: ')}</body></html>"
                         m_body_short = build_short_ntfy_body(sp_track, sp_artist, sp_album, sp_playlist if is_playlist else "", playlist_suffix)
                         notification_type = "track" if on_the_list and ((TRACK_NOTIFICATION and email_song_enabled) or webhook_event_enabled("track")) else "song"
-                        email_attempted, webhook_attempted = send_notification_channels(notification_type, m_subject, m_body, m_body_html, email_song_enabled, webhook_song_enabled, image_url=sp_album_image_url, subject_short=m_subject_short, body_short=m_body_short)
-                        email_sent = email_sent or email_attempted
-                        webhook_sent = webhook_sent or webhook_attempted
+                        email_succeeded, webhook_succeeded = send_notification_channels(notification_type, m_subject, m_body, m_body_html, email_song_enabled, webhook_song_enabled, image_url=sp_album_image_url, subject_short=m_subject_short, body_short=m_body_short)
+                        email_sent = email_sent or email_succeeded
+                        webhook_sent = webhook_sent or webhook_succeeded
 
                     try:
                         if csv_file_name:
@@ -9086,9 +9319,9 @@ def spotify_monitor_friend_uri(user_uri_id, tracks, csv_file_name):
                             m_body = f"Last played: {sp_artist} - {sp_track}\nDuration: {display_time(sp_track_duration)}{played_for_m_body}{playlist_m_body}\nAlbum: {sp_album}{context_m_body}{music_section_text}{lyrics_section_text}Friend got inactive after listening to music for {calculate_timespan(int(sp_active_ts_stop), int(sp_active_ts_start))}\nFriend played music from {get_range_of_dates_from_tss(sp_active_ts_start, sp_active_ts_stop, short=True, between_sep=' to ')}{listened_songs_mbody}{recent_songs_mbody}\n\nLast activity: {get_date_from_ts(sp_active_ts_stop)}\nInactivity timer: {display_time(SPOTIFY_INACTIVITY_CHECK)}{get_cur_ts(nl_ch + 'Timestamp: ')}"
                             m_body_html = f"<html><head></head><body>Last played: <b><a href=\"{sp_artist_url}\">{escape(sp_artist)}</a> - <a href=\"{sp_track_url}\">{escape(sp_track)}</a></b><br>Duration: {display_time(sp_track_duration)}{played_for_m_body_html}{playlist_m_body_html}<br>Album: <a href=\"{sp_album_url}\">{escape(sp_album)}</a>{context_m_body_html}{music_section_html}{lyrics_section_html}Friend got inactive after listening to music for <b>{calculate_timespan(int(sp_active_ts_stop), int(sp_active_ts_start))}</b><br>Friend played music from <b>{get_range_of_dates_from_tss(sp_active_ts_start, sp_active_ts_stop, short=True, between_sep='</b> to <b>')}</b>{listened_songs_mbody_html}{recent_songs_mbody_html}<br><br>Last activity: <b>{get_date_from_ts(sp_active_ts_stop)}</b><br>Inactivity timer: {display_time(SPOTIFY_INACTIVITY_CHECK)}{get_cur_ts('<br>Timestamp: ')}</body></html>"
                             m_body_short = build_short_ntfy_body(sp_track, sp_artist, sp_album, sp_playlist if is_playlist else "", playlist_suffix)
-                            email_attempted, webhook_attempted = send_notification_channels("inactive", m_subject, m_body, m_body_html, INACTIVE_NOTIFICATION, image_url=sp_playlist_image_url or sp_album_image_url, subject_short=m_subject_short, body_short=m_body_short)
-                            email_sent = email_sent or email_attempted
-                            webhook_sent = webhook_sent or webhook_attempted
+                            email_succeeded, webhook_succeeded = send_notification_channels("inactive", m_subject, m_body, m_body_html, INACTIVE_NOTIFICATION, image_url=sp_playlist_image_url or sp_album_image_url, subject_short=m_subject_short, body_short=m_body_short)
+                            email_sent = email_sent or email_succeeded
+                            webhook_sent = webhook_sent or webhook_succeeded
                         sp_active_ts_start_old = sp_active_ts_start
                         sp_active_ts_start = 0
                         listened_songs_old = listened_songs
@@ -10093,8 +10326,7 @@ def main():
         env_path = None
     else:
         try:
-            from dotenv import find_dotenv, load_dotenv
-            from dotenv.parser import parse_stream
+            from dotenv import find_dotenv
 
             if DOTENV_FILE:
                 env_path = DOTENV_FILE
@@ -10106,24 +10338,12 @@ def main():
                         print(f"* Warning: dotenv file '{env_path}' does not exist\n")
                     env_path = None
                 else:
-                    with open(env_path, "r", encoding="utf-8") as dotenv_file:
-                        bindings = list(parse_stream(dotenv_file))
-                    malformed = [binding for binding in bindings if binding.error]
-                    if malformed:
-                        line_number = malformed[0].original.line
-                        raise ValueError(f"Dotenv syntax error near line {line_number}")
-                    load_dotenv(env_path, override=True, interpolate=False)
+                    apply_dotenv_mapping(read_dotenv_mapping(env_path), initialize_base=True)
             else:
                 default_dotenv_filename = SCROBBLE_HEALTH_DOTENV_FILENAME if scrobble_health_mode else DEFAULT_DOTENV_FILENAME
                 env_path = find_dotenv(filename=default_dotenv_filename) or None
                 if env_path:
-                    with open(env_path, "r", encoding="utf-8") as dotenv_file:
-                        bindings = list(parse_stream(dotenv_file))
-                    malformed = [binding for binding in bindings if binding.error]
-                    if malformed:
-                        line_number = malformed[0].original.line
-                        raise ValueError(f"Dotenv syntax error near line {line_number}")
-                    load_dotenv(env_path, override=True, interpolate=False)
+                    apply_dotenv_mapping(read_dotenv_mapping(env_path), initialize_base=True)
                     DOTENV_FILE = env_path
         except ImportError as exc:
             env_path = DOTENV_FILE if DOTENV_FILE else None
@@ -10197,7 +10417,7 @@ def main():
         SPOTIFY_INACTIVITY_CHECK = args.offline_timer
     if args.disappeared_timer is not None:
         SPOTIFY_DISAPPEARED_CHECK_INTERVAL = args.disappeared_timer
-    for value, option in ((args.scrobble_check_interval, "--scrobble-check-interval"), (args.scrobble_dead_period, "--scrobble-dead-period"), (args.scrobble_min_unmatched, "--scrobble-min-unmatched"), (args.scrobble_match_window, "--scrobble-match-window"), (args.scrobble_lookback, "--scrobble-lookback")):
+    for value, option in ((args.check_interval, "--check-interval"), (args.offline_timer, "--offline-timer"), (args.disappeared_timer, "--disappeared-timer"), (args.scrobble_check_interval, "--scrobble-check-interval"), (args.scrobble_dead_period, "--scrobble-dead-period"), (args.scrobble_min_unmatched, "--scrobble-min-unmatched"), (args.scrobble_match_window, "--scrobble-match-window"), (args.scrobble_lookback, "--scrobble-lookback")):
         if value is not None and value <= 0:
             parser.error(f"{option} must be greater than zero")
     if args.scrobble_repeat_interval is not None and args.scrobble_repeat_interval < 0:
@@ -10249,6 +10469,15 @@ def main():
     if args.track_in_spotify is True:
         TRACK_SONGS = True
 
+    numeric_errors = runtime_configuration_errors()
+    if numeric_errors and not args.doctor:
+        print("* Error: Invalid numeric settings")
+        for numeric_error in numeric_errors:
+            print(f"* {numeric_error}")
+        print("To fix: Use the documented positive interval and count values then retry.")
+        print(f"Guide: {INTERVALS_GUIDE_URL}")
+        sys.exit(1)
+
     if args.authorize_scrobble_health:
         try:
             run_authorize_scrobble_health(SPOTIFY_SCROBBLE_CLIENT_ID, SPOTIFY_SCROBBLE_REDIRECT_URI, env_file=env_path or DOTENV_FILE or None, config_path=cfg_path or CLI_CONFIG_PATH)
@@ -10275,6 +10504,8 @@ def main():
                 _wizard_print_monitor_after_doctor(command_config, command_env, command_target, target_is_saved=target_is_saved)
         sys.exit(doctor_exit)
 
+    LIVENESS_CHECK_COUNTER = LIVENESS_CHECK_INTERVAL / SPOTIFY_CHECK_INTERVAL if LIVENESS_CHECK_INTERVAL else 0
+
     if args.send_test_webhook:
         print("* Sending a test webhook ...\n")
         if send_webhook("Spotify Monitor test", "Your webhook alerts are set up correctly.", "song", force=True) == 0:
@@ -10292,16 +10523,16 @@ def main():
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
-    if not check_internet():
-        sys.exit(1)
-
     if args.flag_file:
         FLAG_FILE = os.path.expanduser(args.flag_file)
-        flag_file_delete()
     else:
         if FLAG_FILE:
             FLAG_FILE = os.path.expanduser(FLAG_FILE)
-            flag_file_delete()
+    if FLAG_FILE and not flag_file_delete():
+        sys.exit(1)
+
+    if not check_internet():
+        sys.exit(1)
 
     if args.send_test_email:
         print("* Sending test email notification ...\n")
@@ -10310,16 +10541,6 @@ def main():
         else:
             sys.exit(1)
         sys.exit(0)
-
-    if args.check_interval:
-        SPOTIFY_CHECK_INTERVAL = args.check_interval
-        LIVENESS_CHECK_COUNTER = LIVENESS_CHECK_INTERVAL / SPOTIFY_CHECK_INTERVAL
-
-    if args.offline_timer:
-        SPOTIFY_INACTIVITY_CHECK = args.offline_timer
-
-    if args.disappeared_timer:
-        SPOTIFY_DISAPPEARED_CHECK_INTERVAL = args.disappeared_timer
 
     if scrobble_health_mode:
         if is_missing_or_placeholder(LASTFM_API_KEY):
