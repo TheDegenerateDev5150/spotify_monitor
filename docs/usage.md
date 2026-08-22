@@ -93,7 +93,7 @@ spotify_monitor --setup-scrobble-health
 
 The setup wizard walks you through the whole process. With complete local authentication it can run Doctor tests and then start scrobble health monitoring immediately.
 
-This mode reads the authorized Spotify account's completed plays through the official `user-read-recently-played` scope then compares them with public Last.fm recent tracks. It ignores Last.fm's currently playing row. Matching uses normalized artist and track names plus a configurable timestamp window.
+This mode reads the authorized Spotify account's completed plays through the official `user-read-recently-played` scope then compares them with public Last.fm recent tracks. It ignores Last.fm's currently playing row. Matching uses normalized artist and track names plus a configurable timestamp window. Competing duplicate plays are assigned together so one early match cannot create a false missing-play outage later in the same history.
 
 If you only need to enter or replace the Last.fm API key, run `spotify_monitor --set-lastfm-credentials`. The key is hidden during entry and saved to the selected dotenv file.
 
@@ -546,7 +546,7 @@ Supported signals:
 | PIPE | Toggle loop email notifications (`-x`) |
 | TRAP | Increase the inactivity timer by 30 seconds (`-o`) |
 | ABRT | Decrease the inactivity timer by 30 seconds (`-o`) |
-| HUP | Reload private values from `.env` and token credentials from Protobuf files |
+| HUP | Reload private values from `.env`, clear keys removed from that file and reload token credentials from Protobuf files |
 
 Send a signal with `kill` or `pkill`. For example:
 
