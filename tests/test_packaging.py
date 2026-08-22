@@ -135,3 +135,13 @@ class TestWorkflowSupplyChain:
                 if "uses:" in line and "@" in line and "./" not in line and not re.search(r"#\s*v?\d", line):
                     missing.append(f"{workflow.name}: {line.strip()}")
         assert missing == []
+
+    # Event and input values never reach a shell directly, which would allow script injection
+    def test_run_steps_do_not_interpolate_event_values(self):
+        offenders = []
+        for workflow in sorted((PROJECT_ROOT / ".github" / "workflows").glob("*.yml")):
+            for block in re.findall(r"run: \|(.*?)(?=\n      [-a-zA-Z]|\Z)", workflow.read_text(encoding="utf-8"), re.S):
+                for line in block.splitlines():
+                    if "${{" in line:
+                        offenders.append(f"{workflow.name}: {line.strip()}")
+        assert offenders == []
