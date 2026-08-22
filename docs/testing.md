@@ -19,7 +19,7 @@ The suite combines several test types:
 - Integration tests use temporary files, SQLite databases and real loopback HTTP and SMTP connections.
 - Packaging tests build the wheel, install it into a clean environment and run the installed command outside the source tree.
 - The offline E2E test runs one complete CLI monitoring iteration against a loopback Spotify fixture.
-- Contract tests validate stable documentation commands, links, container assets and publishing workflows.
+- Contract tests validate stable documentation commands, links, container assets and publishing workflows. They fail when a third-party GitHub Action is not pinned to a commit SHA or when a pin lacks its version comment.
 - CI smoke tests run the application through Windows, Docker and Docker Compose.
 
 No test needs a real Spotify cookie, SMTP password or webhook URL. Loopback transport tests use fake credentials that are accepted only by temporary local servers.
