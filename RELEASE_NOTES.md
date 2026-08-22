@@ -2,6 +2,14 @@
 
 This is a high-level summary of the most important changes.
 
+# Changes in 3.2.2 (TBD)
+
+Version **3.2.2** makes Spotify-to-Last.fm outage alerts easier to understand when the missing-play list is shortened.
+
+**Bug fixes**:
+
+- **BUGFIX:** **Clearer missing-play alerts** - Outage notifications now identify the first missing Spotify play in plain language and label the displayed tracks as the five most recent when older missing plays are omitted
+
 # Changes in 3.2.1 (04 Aug 2026)
 
 Version **3.2.1** makes Spotify-to-Last.fm token refreshes more resilient, adds portable log files and streamlines Friend Activity setup, help and diagnostics.
