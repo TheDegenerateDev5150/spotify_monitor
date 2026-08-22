@@ -475,6 +475,8 @@ Host Spotify auto-play is unavailable by default inside a container because the 
 
 On Linux and macOS, Spotify Monitor can play each reported track. It can also pause playback or play a selected track when the user becomes inactive. See `SP_USER_GOT_OFFLINE_TRACK_ID`.
 
+Set `SP_USER_GOT_OFFLINE_TRACK_ID` to the raw Spotify track ID made only of ASCII letters and digits. Do not use a full Spotify URI or URL.
+
 On Windows, the first track can start if Spotify is open and currently idle. Later tracks are opened in Spotify but may require you to press Play.
 
 You can change the playback method per platform using the corresponding configuration option.
