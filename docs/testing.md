@@ -19,10 +19,18 @@ The suite combines several test types:
 - Integration tests use temporary files, SQLite databases and real loopback HTTP and SMTP connections.
 - Packaging tests build the wheel, install it into a clean environment and run the installed command outside the source tree.
 - The offline E2E test runs one complete CLI monitoring iteration against a loopback Spotify fixture.
-- Contract tests validate stable documentation commands, links, container assets and publishing workflows. They fail when a third-party GitHub Action is not pinned to a commit SHA or when a pin lacks its version comment.
+- Contract tests validate stable documentation commands, links, container assets and publishing workflows.
 - CI smoke tests run the application through Windows, Docker and Docker Compose.
 
 No test needs a real Spotify cookie, SMTP password or webhook URL. Loopback transport tests use fake credentials that are accepted only by temporary local servers.
+
+## Supply Chain Checks
+
+A separate [supply chain workflow](https://github.com/misiektoja/spotify_monitor/blob/main/.github/workflows/supply-chain.yml) runs on every change and again weekly, so a vulnerability published after a merge is still caught. It scans the full commit history for leaked credentials with gitleaks, audits the resolved dependency tree with `pip-audit`, builds a CycloneDX software bill of materials that lists every package a user actually installs and scans the container image for fixable high and critical vulnerabilities.
+
+Two further workflows watch the code and the project setup. [CodeQL](https://github.com/misiektoja/spotify_monitor/blob/main/.github/workflows/codeql.yml) runs GitHub's `security-extended` Python queries on every change and weekly, reporting findings as code scanning alerts. [OpenSSF Scorecard](https://github.com/misiektoja/spotify_monitor/blob/main/.github/workflows/scorecard.yml) scores the repository's security practices, such as branch protection, action pinning and dependency update automation, and publishes the score shown as a badge on the project page.
+
+The pytest suite covers the workflows themselves. It fails when a third-party action is not pinned to a commit SHA, when a pin lacks its version comment or when a workflow passes an event value straight into a shell.
 
 ## Focused Test Commands
 
