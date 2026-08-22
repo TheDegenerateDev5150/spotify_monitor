@@ -4,7 +4,7 @@ This is a high-level summary of the most important changes.
 
 # Changes in 3.2.2 (TBD)
 
-Version **3.2.2** secures saved configuration, prevents false or lost monitoring alerts and makes file-based runtime state fail visibly instead of remaining stale.
+Version **3.2.2** secures saved configuration and local playback, prevents false or lost monitoring alerts and makes file-based runtime state fail visibly instead of remaining stale.
 
 **Bug fixes**:
 
@@ -13,6 +13,9 @@ Version **3.2.2** secures saved configuration, prevents false or lost monitoring
 - **BUGFIX:** **Delivery-aware monitoring alerts** - Email and webhook results now reflect actual transport success. Failed active or inactive Friend Activity alerts retry once per check while scrobble outage, reminder and recovery notices remain pending across restarts until one configured channel succeeds
 - **BUGFIX:** **Duplicate scrobble matching** - Competing plays of the same artist and track now use a maximum-cardinality minimum-distance assignment so a greedy early match cannot create a false Last.fm outage
 - **BUGFIX:** **Accurate dotenv and activity-file state** - `SIGHUP` clears secrets removed from the selected dotenv file and resets affected authentication caches. Activity flag creation or deletion is atomic, stale startup flags are validated and failures now stop or visibly disable the integration
+- **BUGFIX:** **Safe local playback and durable deadlines** - Track IDs are validated before local Spotify playback and Linux or Windows integrations no longer build shell command strings. Nested request alarms now restore the enclosing monitor deadline so per-request cleanup cannot disable the existing anti-hang protection
+- **BUGFIX:** **Lossless Unicode config and leaner cookie polling** - Generated double-quoted configuration preserves supplementary Unicode characters and cached cookie tokens no longer make a duplicate buddy-list request before the normal monitoring poll
+- **BUGFIX:** **Safer debug utilities and container output** - Token validation accepts only HTTPS Spotify API destinations without redirects. Both debug utilities return nonzero status for failed requested work and the secret-grabber image runs non-root with configurable Compose UID and GID mapping for host-owned output
 
 # Changes in 3.2.1 (04 Aug 2026)
 
