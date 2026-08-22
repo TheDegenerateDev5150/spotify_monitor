@@ -54,6 +54,18 @@ def test_compose_contract():
     assert "docker compose up --no-log-prefix" in compose
 
 
+# Verifies the debug secret grabber runs non-root and supports host ownership mapping
+def test_secret_grabber_container_runtime_contract():
+    dockerfile = read_asset("debug/spotify_monitor_secret_grabber_docker/Dockerfile")
+    compose = read_asset("debug/spotify_monitor_secret_grabber_docker/compose.yaml")
+    assert "ARG APP_UID=1000" in dockerfile
+    assert "ARG APP_GID=1000" in dockerfile
+    assert "PLAYWRIGHT_BROWSERS_PATH=/ms-playwright" in dockerfile
+    assert "USER spotify-secrets" in dockerfile
+    assert 'user: "${SPOTIFY_SECRET_GRABBER_UID:-1000}:${SPOTIFY_SECRET_GRABBER_GID:-1000}"' in compose
+    assert "HOME: /tmp" in compose
+
+
 # Verifies Docker publishing is test-gated and uses the expected Hub credentials and architectures
 def test_docker_publish_workflow_contract():
     workflow = read_asset(".github/workflows/publish-docker.yml")
