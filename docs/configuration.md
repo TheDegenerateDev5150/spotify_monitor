@@ -25,6 +25,15 @@ When you provide a filename, Spotify Monitor checks that the new configuration c
 
 Open `spotify_monitor.conf` in a text editor and change the settings you need. The file contains a short explanation above each setting.
 
+<a id="what-a-configuration-file-may-contain"></a>
+### What a Configuration File May Contain
+
+A configuration file is read as data, not executed. Spotify Monitor accepts only `SETTING = value` lines where the name is one of the documented settings and the value is a plain literal such as a string, number, `True`, `False`, `None`, a list or a dictionary. Comments and blank lines are fine.
+
+Anything else is rejected before it runs, including `import` statements, function calls, arithmetic and other expressions, `if` blocks and names the tool does not recognize. Spotify Monitor reports the offending line number and setting, then exits. This is deliberate: it means a `spotify_monitor.conf` that happens to sit in the directory you started the tool from cannot execute code.
+
+> **Upgrading from an earlier version:** configuration files used to be executed as Python. If yours contains an import, a computed value such as `60 * 5` or any other expression, replace it with the resulting literal value, for example `300`.
+
 If the same setting appears in more than one place, the item later in this list wins:
 
 1. Built-in defaults
