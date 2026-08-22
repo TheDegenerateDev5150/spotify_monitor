@@ -6,6 +6,7 @@
   <img src="https://img.shields.io/github/stars/misiektoja/spotify_monitor?style=flat-square&color=magenta" alt="GitHub Stars" />
   <img src="https://img.shields.io/badge/python-3.9+-blueviolet?style=flat-square" alt="Python Versions" />
   <img src="https://img.shields.io/github/license/misiektoja/spotify_monitor?style=flat-square&color=blue" alt="License" />
+  <img src="https://img.shields.io/ossf-scorecard/github.com/misiektoja/spotify_monitor?style=flat-square&label=openssf%20scorecard" alt="OpenSSF Scorecard" />
   <img src="https://img.shields.io/github/last-commit/misiektoja/spotify_monitor?style=flat-square&color=green" alt="Last Commit" />
   <img src="https://img.shields.io/badge/maintenance-active-brightgreen?style=flat-square" alt="Maintenance" />
 </p>
@@ -177,6 +178,16 @@ Full documentation is available at **[misiektoja.github.io/spotify_monitor](http
 
 See [RELEASE_NOTES.md](https://github.com/misiektoja/spotify_monitor/blob/main/RELEASE_NOTES.md) for details.
 
+<a id="contributing"></a>
+## Contributing
+
+Bug reports, documentation fixes and code contributions are welcome. See [CONTRIBUTING.md](https://github.com/misiektoja/spotify_monitor/blob/main/CONTRIBUTING.md) for the development setup, the checks CI enforces and what a change needs before it is merged. Participation is covered by the [Code of Conduct](https://github.com/misiektoja/spotify_monitor/blob/main/CODE_OF_CONDUCT.md).
+
+<a id="security"></a>
+## Security
+
+Report a suspected vulnerability privately through [GitHub security advisories](https://github.com/misiektoja/spotify_monitor/security/advisories/new), never as a public issue. [SECURITY.md](https://github.com/misiektoja/spotify_monitor/blob/main/SECURITY.md) covers the reporting process, the supported versions and the security posture of stored secrets, configuration loading and local playback.
+
 <a id="maintainers"></a>
 ## Maintainers
 
@@ -186,4 +197,4 @@ See [RELEASE_NOTES.md](https://github.com/misiektoja/spotify_monitor/blob/main/R
 <a id="license"></a>
 ## License
 
-Licensed under GPLv3. See [LICENSE](https://github.com/misiektoja/spotify_monitor/blob/main/LICENSE).
+Licensed under GPLv3. See [LICENSE](https://github.com/misiektoja/spotify_monitor/blob/main/LICENSE). Dependency licenses are listed in [THIRD_PARTY_NOTICES.md](https://github.com/misiektoja/spotify_monitor/blob/main/THIRD_PARTY_NOTICES.md).
