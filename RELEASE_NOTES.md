@@ -9,6 +9,7 @@ Version **3.2.2** secures saved configuration and local playback, prevents false
 **Features and improvements**:
 
 - **IMPROVE:** **Clearer ntfy webhook customization** - Documentation and the generated configuration now state that `WEBHOOK_TEMPLATE`, `WEBHOOK_USERNAME` and `WEBHOOK_AVATAR_URL` apply only to Discord and are ignored by ntfy, which needs no template. Customize ntfy delivery through `WEBHOOK_HEADERS` such as `X-Priority` or `X-Tags`
+- **IMPROVE:** **Pinned release automation** - Every workflow now pins third-party GitHub Actions to a specific commit with the released version recorded alongside it, so a moved tag cannot change what runs in the jobs that hold PyPI, Docker Hub and GitHub release credentials. Dependabot keeps the pins current and new contract tests fail the build if any action returns to a mutable tag
 
 **Bug fixes**:
 
