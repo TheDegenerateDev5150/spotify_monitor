@@ -1,5 +1,8 @@
 FROM python:3.11-slim
 ENV DEBIAN_FRONTEND=noninteractive
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+ARG APP_UID=1000
+ARG APP_GID=1000
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates curl unzip xvfb \
@@ -12,5 +15,8 @@ RUN pip install --upgrade pip && pip install --no-cache-dir -r /tmp/requirements
 RUN python -m playwright install --with-deps chromium
 
 COPY spotify_monitor_secret_grabber.py /app/spotify_monitor_secret_grabber.py
-WORKDIR /app
+RUN groupadd --gid ${APP_GID} spotify-secrets && useradd --uid ${APP_UID} --gid ${APP_GID} --create-home --shell /usr/sbin/nologin spotify-secrets && mkdir -p /work && chown spotify-secrets:spotify-secrets /work
+ENV HOME=/home/spotify-secrets
+USER spotify-secrets
+WORKDIR /work
 ENTRYPOINT ["python", "/app/spotify_monitor_secret_grabber.py"]
