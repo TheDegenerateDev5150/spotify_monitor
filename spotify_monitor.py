@@ -1588,7 +1588,8 @@ def _split_inline_comment_preserving_strings(rhs: str) -> tuple[str, str]:
 def _format_config_value(value, prefer_double_quotes: bool) -> str:
     if isinstance(value, str):
         if prefer_double_quotes:
-            return json.dumps(value, ensure_ascii=True)
+            escaped = value.encode("unicode_escape").decode("ascii").replace('"', '\\"')
+            return f'"{escaped}"'
         escaped = value.encode("unicode_escape").decode("ascii").replace("'", "\\'")
         return f"'{escaped}'"
     if value is None or isinstance(value, (bool, int, float, list, tuple, dict)):
@@ -2644,6 +2645,31 @@ class TimeoutException(Exception):
 # Signal handler for SIGALRM when the operation times out
 def timeout_handler(sig, frame):
     raise TimeoutException
+
+
+# Starts a POSIX alarm without discarding an earlier enclosing deadline
+def _start_timeout_alarm(timeout: float):
+    if platform.system() == "Windows" or not hasattr(signal, "setitimer"):
+        return None
+    previous_handler = signal.getsignal(signal.SIGALRM)
+    previous_delay, previous_interval = signal.getitimer(signal.ITIMER_REAL)
+    effective_timeout = min(float(timeout), previous_delay) if previous_delay > 0 else float(timeout)
+    signal.signal(signal.SIGALRM, timeout_handler)
+    signal.setitimer(signal.ITIMER_REAL, effective_timeout)
+    return previous_handler, previous_delay, previous_interval, time.monotonic()
+
+
+# Restores the enclosing POSIX alarm with its elapsed time deducted
+def _restore_timeout_alarm(alarm_state) -> None:
+    if alarm_state is None:
+        return
+    previous_handler, previous_delay, previous_interval, started_at = alarm_state
+    elapsed = max(0.0, time.monotonic() - started_at)
+    signal.signal(signal.SIGALRM, previous_handler)
+    if previous_delay > 0:
+        signal.setitimer(signal.ITIMER_REAL, max(previous_delay - elapsed, 0.000001), previous_interval)
+    else:
+        signal.setitimer(signal.ITIMER_REAL, 0, previous_interval)
 
 
 # Signal handler when user presses Ctrl+C
@@ -3846,9 +3872,7 @@ def check_token_validity(access_token: str, client_id: Optional[str] = None, use
             "Client-Id": client_id
         })
 
-    if platform.system() != 'Windows':
-        signal.signal(signal.SIGALRM, timeout_handler)
-        signal.alarm(FUNCTION_TIMEOUT + 2)
+    alarm_state = _start_timeout_alarm(FUNCTION_TIMEOUT + 2)
     try:
         debug_print(
             f"Token validity check mode={check_mode}, url={url}, "
@@ -3862,8 +3886,7 @@ def check_token_validity(access_token: str, client_id: Optional[str] = None, use
         valid = False
         debug_print(f"HTTP GET {url} -> failed during token validity check [mode={check_mode}]")
     finally:
-        if platform.system() != 'Windows':
-            signal.alarm(0)
+        _restore_timeout_alarm(alarm_state)
     return valid
 
 
@@ -3960,10 +3983,9 @@ def fetch_server_time(session: req.Session, ua: str) -> int:
         "Accept": "*/*",
     }
 
+    alarm_state = None
     try:
-        if platform.system() != 'Windows':
-            signal.signal(signal.SIGALRM, timeout_handler)
-            signal.alarm(FUNCTION_TIMEOUT + 2)
+        alarm_state = _start_timeout_alarm(FUNCTION_TIMEOUT + 2)
         debug_print(f"HTTP HEAD {SERVER_TIME_URL} [server time] timeout={FUNCTION_TIMEOUT}")
         response = session.head(SERVER_TIME_URL, headers=headers, timeout=FUNCTION_TIMEOUT, verify=VERIFY_SSL)
         response.raise_for_status()
@@ -3973,8 +3995,7 @@ def fetch_server_time(session: req.Session, ua: str) -> int:
     except Exception as e:
         raise Exception(f"fetch_server_time() head network request error: {e}")
     finally:
-        if platform.system() != 'Windows':
-            signal.alarm(0)
+        _restore_timeout_alarm(alarm_state)
 
     date_hdr = response.headers.get("Date")
     if not date_hdr:
@@ -4031,10 +4052,9 @@ def refresh_access_token_from_sp_dc(sp_dc: str) -> dict:
 
     last_err = ""
 
+    alarm_state = None
     try:
-        if platform.system() != "Windows":
-            signal.signal(signal.SIGALRM, timeout_handler)
-            signal.alarm(FUNCTION_TIMEOUT + 2)
+        alarm_state = _start_timeout_alarm(FUNCTION_TIMEOUT + 2)
 
         debug_print(f"HTTP GET {TOKEN_URL} [sp_dc transport] params={sanitize_debug_params(params)} headers={sanitize_debug_headers(headers)}")
         response = session.get(TOKEN_URL, params=params, headers=headers, timeout=FUNCTION_TIMEOUT, verify=VERIFY_SSL)
@@ -4048,16 +4068,14 @@ def refresh_access_token_from_sp_dc(sp_dc: str) -> dict:
         last_err = str(e)
         debug_print(f"HTTP GET {TOKEN_URL} [sp_dc transport] failed: {e}")
     finally:
-        if platform.system() != "Windows":
-            signal.alarm(0)
+        _restore_timeout_alarm(alarm_state)
 
     if not transport or (sp_dc and not check_token_validity(token, data.get("clientId", ""), USER_AGENT)):
         params["reason"] = "init"
 
+        alarm_state = None
         try:
-            if platform.system() != "Windows":
-                signal.signal(signal.SIGALRM, timeout_handler)
-                signal.alarm(FUNCTION_TIMEOUT + 2)
+            alarm_state = _start_timeout_alarm(FUNCTION_TIMEOUT + 2)
 
             debug_print(f"HTTP GET {TOKEN_URL} [sp_dc init] params={sanitize_debug_params(params)} headers={sanitize_debug_headers(headers)}")
             response = session.get(TOKEN_URL, params=params, headers=headers, timeout=FUNCTION_TIMEOUT, verify=VERIFY_SSL)
@@ -4071,8 +4089,7 @@ def refresh_access_token_from_sp_dc(sp_dc: str) -> dict:
             last_err = str(e)
             debug_print(f"HTTP GET {TOKEN_URL} [sp_dc init] failed: {e}")
         finally:
-            if platform.system() != "Windows":
-                signal.alarm(0)
+            _restore_timeout_alarm(alarm_state)
 
     if not init or not data or "accessToken" not in data:
         raise Exception(f"refresh_access_token_from_sp_dc(): Unsuccessful token request{': ' + last_err if last_err else ''}")
@@ -4095,7 +4112,7 @@ def spotify_get_access_token_from_sp_dc(sp_dc: str):
 
     now = time.time()
 
-    if SP_CACHED_ACCESS_TOKEN and now < SP_ACCESS_TOKEN_EXPIRES_AT and check_token_validity(SP_CACHED_ACCESS_TOKEN, SP_CACHED_CLIENT_ID, USER_AGENT):
+    if SP_CACHED_ACCESS_TOKEN and now < SP_ACCESS_TOKEN_EXPIRES_AT:
         debug_print("Using cached Spotify access token (sp_dc source)")
         return SP_CACHED_ACCESS_TOKEN
 
@@ -4116,7 +4133,7 @@ def spotify_get_access_token_from_sp_dc(sp_dc: str):
             SP_ACCESS_TOKEN_EXPIRES_AT = token_data["expires_at"]
             SP_CACHED_CLIENT_ID = client_id
 
-            if SP_CACHED_ACCESS_TOKEN is None or not check_token_validity(SP_CACHED_ACCESS_TOKEN, SP_CACHED_CLIENT_ID, USER_AGENT):
+            if SP_CACHED_ACCESS_TOKEN is None:
                 debug_print("Received token is invalid, retrying")
                 retry += 1
                 time.sleep(TOKEN_RETRY_TIMEOUT)
@@ -5150,10 +5167,8 @@ def spotify_get_access_token_from_client(device_id, system_id, user_uri_id, refr
         "Accept-Encoding": "gzip, deflate, br, zstd"
     }
 
+    alarm_state = _start_timeout_alarm(FUNCTION_TIMEOUT + 2)
     try:
-        if platform.system() != 'Windows':
-            signal.signal(signal.SIGALRM, timeout_handler)
-            signal.alarm(FUNCTION_TIMEOUT + 2)
         debug_print(f"HTTP POST {LOGIN_URL} [client auth] headers={sanitize_debug_headers(headers)} payload_len={len(protobuf_body)}")
         response = req.post(LOGIN_URL, headers=headers, data=protobuf_body, timeout=FUNCTION_TIMEOUT, verify=VERIFY_SSL)
         debug_print(f"HTTP POST {LOGIN_URL} [client auth] -> {response.status_code}")
@@ -5164,8 +5179,7 @@ def spotify_get_access_token_from_client(device_id, system_id, user_uri_id, refr
         debug_print(f"HTTP POST {LOGIN_URL} [client auth] failed: {e}")
         raise Exception(f"spotify_get_access_token_from_client() network request error: {e}")
     finally:
-        if platform.system() != 'Windows':
-            signal.alarm(0)
+        _restore_timeout_alarm(alarm_state)
 
     if response.status_code != 200:
         if response.headers.get("client-token-error") == "INVALID_CLIENTTOKEN":
@@ -5246,10 +5260,8 @@ def spotify_get_client_token(app_version, device_id, system_id, **device_overrid
         "Accept-Encoding": "gzip, deflate, br, zstd",
     }
 
+    alarm_state = _start_timeout_alarm(FUNCTION_TIMEOUT + 2)
     try:
-        if platform.system() != 'Windows':
-            signal.signal(signal.SIGALRM, timeout_handler)
-            signal.alarm(FUNCTION_TIMEOUT + 2)
         debug_print(f"HTTP POST {CLIENTTOKEN_URL} [client token] app_version={app_version}, device_overrides={device_overrides}, payload_len={len(body)}")
         response = req.post(CLIENTTOKEN_URL, headers=headers, data=body, timeout=FUNCTION_TIMEOUT, verify=VERIFY_SSL)
         debug_print(f"HTTP POST {CLIENTTOKEN_URL} [client token] -> {response.status_code}")
@@ -5260,8 +5272,7 @@ def spotify_get_client_token(app_version, device_id, system_id, **device_overrid
         debug_print(f"HTTP POST {CLIENTTOKEN_URL} [client token] failed: {e}")
         raise Exception(f"spotify_get_client_token() network request error: {e}")
     finally:
-        if platform.system() != 'Windows':
-            signal.alarm(0)
+        _restore_timeout_alarm(alarm_state)
 
     if response.status_code != 200:
         raise req.HTTPError(f"Spotify client-token request failed with HTTP {response.status_code}", response=response)
@@ -6151,9 +6162,7 @@ def is_user_removed(access_token, user_uri_id, oauth_app=False):
             "Client-Id": SP_CACHED_CLIENT_ID
         })
 
-    if platform.system() != 'Windows':
-        signal.signal(signal.SIGALRM, timeout_handler)
-        signal.alarm(FUNCTION_TIMEOUT + 2)
+    alarm_state = _start_timeout_alarm(FUNCTION_TIMEOUT + 2)
 
     try:
         temp_session = req.Session()
@@ -6180,19 +6189,28 @@ def is_user_removed(access_token, user_uri_id, oauth_app=False):
     except Exception:
         return False
     finally:
-        if platform.system() != 'Windows':
-            signal.alarm(0)
+        _restore_timeout_alarm(alarm_state)
 
 
+# Builds a safe Spotify track URI for local playback integrations
+def spotify_playback_uri(sp_track_uri_id) -> str:
+    if not isinstance(sp_track_uri_id, str) or re.fullmatch(r"[A-Za-z0-9]+", sp_track_uri_id) is None:
+        raise ValueError("Spotify playback track ID must contain only ASCII letters and digits")
+    return f"spotify:track:{sp_track_uri_id}"
+
+
+# Opens one validated Spotify track through the selected macOS integration
 def spotify_macos_play_song(sp_track_uri_id, method=SPOTIFY_MACOS_PLAYING_METHOD):
+    track_uri = spotify_playback_uri(sp_track_uri_id)
     if method == "apple-script":   # apple-script
-        script = f'tell app "Spotify" to play track "spotify:track:{sp_track_uri_id}"'
+        script = f'tell app "Spotify" to play track "{track_uri}"'
         proc = subprocess.Popen(['osascript', '-'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
         stdout, stderr = proc.communicate(script)
     else:                          # trigger-url - just trigger track URL in the client
-        subprocess.call(('open', spotify_convert_uri_to_url(f"spotify:track:{sp_track_uri_id}")))
+        subprocess.call(('open', spotify_convert_uri_to_url(track_uri)))
 
 
+# Applies a play or pause action through the selected macOS integration
 def spotify_macos_play_pause(action, method=SPOTIFY_MACOS_PLAYING_METHOD):
     if method == "apple-script":   # apple-script
         if str(action).lower() == "pause":
@@ -6205,37 +6223,42 @@ def spotify_macos_play_pause(action, method=SPOTIFY_MACOS_PLAYING_METHOD):
             stdout, stderr = proc.communicate(script)
 
 
+# Opens one validated Spotify track through the selected Linux integration
 def spotify_linux_play_song(sp_track_uri_id, method=SPOTIFY_LINUX_PLAYING_METHOD):
+    track_uri = spotify_playback_uri(sp_track_uri_id)
     if method == "dbus-send":      # dbus-send
-        subprocess.call((f"dbus-send --type=method_call --dest=org.mpris.MediaPlayer2.spotify /org/mpris/MediaPlayer2 org.mpris.MediaPlayer2.Player.OpenUri string:'spotify:track:{sp_track_uri_id}'"), shell=True)
+        subprocess.call(("dbus-send", "--type=method_call", "--dest=org.mpris.MediaPlayer2.spotify", "/org/mpris/MediaPlayer2", "org.mpris.MediaPlayer2.Player.OpenUri", f"string:{track_uri}"))
     elif method == "qdbus":        # qdbus
-        subprocess.call((f"qdbus org.mpris.MediaPlayer2.spotify /org/mpris/MediaPlayer2 org.mpris.MediaPlayer2.Player.OpenUri spotify:track:{sp_track_uri_id}"), shell=True)
+        subprocess.call(("qdbus", "org.mpris.MediaPlayer2.spotify", "/org/mpris/MediaPlayer2", "org.mpris.MediaPlayer2.Player.OpenUri", track_uri))
     else:                          # trigger-url - just trigger track URL in the client
-        subprocess.call(('xdg-open', spotify_convert_uri_to_url(f"spotify:track:{sp_track_uri_id}")), stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
+        subprocess.call(('xdg-open', spotify_convert_uri_to_url(track_uri)), stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
 
 
+# Applies a play or pause action through the selected Linux integration
 def spotify_linux_play_pause(action, method=SPOTIFY_LINUX_PLAYING_METHOD):
     if method == "dbus-send":      # dbus-send
         if str(action).lower() == "pause":
-            subprocess.call((f"dbus-send --type=method_call --dest=org.mpris.MediaPlayer2.spotify /org/mpris/MediaPlayer2 org.mpris.MediaPlayer2.Player.Pause"), shell=True)
+            subprocess.call(("dbus-send", "--type=method_call", "--dest=org.mpris.MediaPlayer2.spotify", "/org/mpris/MediaPlayer2", "org.mpris.MediaPlayer2.Player.Pause"))
         elif str(action).lower() == "play":
-            subprocess.call((f"dbus-send --type=method_call --dest=org.mpris.MediaPlayer2.spotify /org/mpris/MediaPlayer2 org.mpris.MediaPlayer2.Player.Play"), shell=True)
+            subprocess.call(("dbus-send", "--type=method_call", "--dest=org.mpris.MediaPlayer2.spotify", "/org/mpris/MediaPlayer2", "org.mpris.MediaPlayer2.Player.Play"))
     elif method == "qdbus":        # qdbus
         if str(action).lower() == "pause":
-            subprocess.call((f"qdbus org.mpris.MediaPlayer2.spotify /org/mpris/MediaPlayer2 org.mpris.MediaPlayer2.Player.Pause"), shell=True)
+            subprocess.call(("qdbus", "org.mpris.MediaPlayer2.spotify", "/org/mpris/MediaPlayer2", "org.mpris.MediaPlayer2.Player.Pause"))
         elif str(action).lower() == "play":
-            subprocess.call((f"qdbus org.mpris.MediaPlayer2.spotify /org/mpris/MediaPlayer2 org.mpris.MediaPlayer2.Player.Play"), shell=True)
+            subprocess.call(("qdbus", "org.mpris.MediaPlayer2.spotify", "/org/mpris/MediaPlayer2", "org.mpris.MediaPlayer2.Player.Play"))
 
 
+# Opens one validated Spotify track through the selected Windows integration
 def spotify_win_play_song(sp_track_uri_id, method=SPOTIFY_WINDOWS_PLAYING_METHOD):
     WIN_SPOTIFY_APP_PATH = r'%APPDATA%\Spotify\Spotify.exe'
+    track_uri = spotify_playback_uri(sp_track_uri_id)
 
     if method == "start-uri":      # start-uri
-        subprocess.call((f"start spotify:track:{sp_track_uri_id}"), shell=True)
+        getattr(os, "startfile")(track_uri)
     elif method == "spotify-cmd":  # spotify-cmd
-        subprocess.call((f"{WIN_SPOTIFY_APP_PATH} --uri=spotify:track:{sp_track_uri_id}"), shell=True)
+        subprocess.call((os.path.expandvars(WIN_SPOTIFY_APP_PATH), f"--uri={track_uri}"))
     else:                          # trigger-url - just trigger track URL in the client
-        getattr(os, "startfile")(spotify_convert_uri_to_url(f"spotify:track:{sp_track_uri_id}"))
+        getattr(os, "startfile")(spotify_convert_uri_to_url(track_uri))
 
 
 # Finds one optional config file using the selected default filename
@@ -6434,6 +6457,8 @@ def runtime_configuration_errors() -> List[str]:
             errors.append(f"{name} must be an integer greater than zero, not {value!r}")
     if not isinstance(SMTP_PORT, int) or isinstance(SMTP_PORT, bool) or not 1 <= SMTP_PORT <= 65535:
         errors.append(f"SMTP_PORT must be an integer from 1 through 65535, not {SMTP_PORT!r}")
+    if SP_USER_GOT_OFFLINE_TRACK_ID and (not isinstance(SP_USER_GOT_OFFLINE_TRACK_ID, str) or re.fullmatch(r"[A-Za-z0-9]+", SP_USER_GOT_OFFLINE_TRACK_ID) is None):
+        errors.append("SP_USER_GOT_OFFLINE_TRACK_ID must be a raw Spotify track ID containing only ASCII letters and digits")
     return errors
 
 
@@ -8491,9 +8516,7 @@ def spotify_monitor_friend_uri(user_uri_id, tracks, csv_file_name):
 
         # Sometimes Spotify network functions halt even though we specified the timeout
         # To overcome this we use alarm signal functionality to kill it inevitably, not available on Windows
-        if platform.system() != 'Windows':
-            signal.signal(signal.SIGALRM, timeout_handler)
-            signal.alarm(ALARM_TIMEOUT)
+        alarm_state = _start_timeout_alarm(ALARM_TIMEOUT)
         try:
             if TOKEN_SOURCE == "client":
                 sp_accessToken = spotify_get_access_token_from_client_auto(DEVICE_ID, SYSTEM_ID, USER_URI_ID, REFRESH_TOKEN)
@@ -8506,18 +8529,15 @@ def spotify_monitor_friend_uri(user_uri_id, tracks, csv_file_name):
             debug_print(f"Friend lookup result: found={sp_found}")
             email_sent = False
             webhook_sent = False
-            if platform.system() != 'Windows':
-                signal.alarm(0)
+            _restore_timeout_alarm(alarm_state)
         except TimeoutException:
-            if platform.system() != 'Windows':
-                signal.alarm(0)
+            _restore_timeout_alarm(alarm_state)
             print_monitor_recovery(TimeoutException(f"Spotify request timed out after {display_time(ALARM_TIMEOUT)}"), "runtime", recovery_hint_tracker, f"* Error, retrying in {display_time(ALARM_RETRY)}: ")
             print_cur_ts("Timestamp:\t\t\t")
             time.sleep(ALARM_RETRY)
             continue
         except Exception as e:
-            if platform.system() != 'Windows':
-                signal.alarm(0)
+            _restore_timeout_alarm(alarm_state)
 
             debug_print(f"Main monitor loop error: {e}")
 
@@ -8749,9 +8769,7 @@ def spotify_monitor_friend_uri(user_uri_id, tracks, csv_file_name):
                 while True:
                     # Sometimes Spotify network functions halt even though we specified the timeout
                     # To overcome this we use alarm signal functionality to kill it inevitably, not available on Windows
-                    if platform.system() != 'Windows':
-                        signal.signal(signal.SIGALRM, timeout_handler)
-                        signal.alarm(ALARM_TIMEOUT)
+                    alarm_state = _start_timeout_alarm(ALARM_TIMEOUT)
                     try:
                         if TOKEN_SOURCE == "client":
                             sp_accessToken = spotify_get_access_token_from_client_auto(DEVICE_ID, SYSTEM_ID, USER_URI_ID, REFRESH_TOKEN)
@@ -8766,18 +8784,15 @@ def spotify_monitor_friend_uri(user_uri_id, tracks, csv_file_name):
                         recovery_hint_tracker.reset()
                         email_sent = False
                         webhook_sent = False
-                        if platform.system() != 'Windows':
-                            signal.alarm(0)
+                        _restore_timeout_alarm(alarm_state)
                         break
                     except TimeoutException:
-                        if platform.system() != 'Windows':
-                            signal.alarm(0)
+                        _restore_timeout_alarm(alarm_state)
                         print_monitor_recovery(TimeoutException(f"Spotify request timed out after {display_time(ALARM_TIMEOUT)}"), "runtime", recovery_hint_tracker, f"* Error, retrying in {display_time(ALARM_RETRY)}: ")
                         print_cur_ts("Timestamp:\t\t\t")
                         time.sleep(ALARM_RETRY)
                     except Exception as e:
-                        if platform.system() != 'Windows':
-                            signal.alarm(0)
+                        _restore_timeout_alarm(alarm_state)
 
                         auth_context = "client_auth" if TOKEN_SOURCE == "client" else "cookie_auth"
                         advice = classify_recovery_error(e, auth_context)
