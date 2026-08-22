@@ -1,5 +1,6 @@
 """Contract tests for container assets and publishing workflows."""
 
+import re
 from pathlib import Path
 
 
@@ -73,10 +74,8 @@ def test_docker_publish_workflow_contract():
     assert "uses: ./.github/workflows/tests.yml" in workflow
     assert "needs: test" in workflow
     assert "linux/amd64,linux/arm64" in workflow
-    assert "docker/setup-qemu-action@v4" in workflow
-    assert "docker/setup-buildx-action@v4" in workflow
-    assert "docker/login-action@v4" in workflow
-    assert "docker/build-push-action@v7" in workflow
+    for action in ("docker/setup-qemu-action", "docker/setup-buildx-action", "docker/login-action", "docker/build-push-action"):
+        assert re.search(rf"{re.escape(action)}@[0-9a-f]{{40}} # v\d", workflow)
     assert "secrets.DOCKERHUB_USERNAME" in workflow
     assert "secrets.DOCKERHUB_TOKEN" in workflow
     assert "${base_tag#v}" in workflow
