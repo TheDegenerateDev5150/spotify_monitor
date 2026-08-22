@@ -48,22 +48,34 @@ jobs:
       - name: Resolve image tags
         id: resolve_tags
         shell: bash
+        # Event and input values reach the script through the environment. Interpolating them directly into
+        # run: would let a crafted tag or input run shell commands in a job already holding the registry token
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+          INPUT_PUSH_LATEST: ${{ github.event.inputs.push_latest }}
         run: |
           set -euo pipefail
           base_tag=""
           push_latest="false"
-          if [[ "${{ github.event_name }}" == "release" ]]; then
-            base_tag="${{ github.event.release.tag_name }}"
+          if [[ "$EVENT_NAME" == "release" ]]; then
+            base_tag="$RELEASE_TAG"
             push_latest="true"
-          elif [[ -n "${{ github.event.inputs.tag }}" ]]; then
-            base_tag="${{ github.event.inputs.tag }}"
-            push_latest="${{ github.event.inputs.push_latest }}"
+          elif [[ -n "$INPUT_TAG" ]]; then
+            base_tag="$INPUT_TAG"
+            push_latest="$INPUT_PUSH_LATEST"
           else
             base_tag="${GITHUB_SHA::7}"
-            push_latest="${{ github.event.inputs.push_latest }}"
+            push_latest="$INPUT_PUSH_LATEST"
           fi
           if [[ -z "$base_tag" ]]; then
             echo "Failed to resolve image tag" >&2
+            exit 1
+          fi
+          # A tag becomes part of an image reference, so refuse anything outside the characters a tag may use
+          if [[ ! "$base_tag" =~ ^[A-Za-z0-9._-]+$ ]]; then
+            echo "Refusing unsafe image tag: $base_tag" >&2
             exit 1
           fi
           tags=("${IMAGE_NAME}:${base_tag}")
