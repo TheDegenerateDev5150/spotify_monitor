@@ -6,6 +6,10 @@ This is a high-level summary of the most important changes.
 
 Version **3.2.2** secures saved configuration and local playback, prevents false or lost monitoring alerts and makes file-based runtime state fail visibly instead of remaining stale.
 
+**Features and improvements**:
+
+- **IMPROVE:** **Clearer ntfy webhook customization** - Documentation and the generated configuration now state that `WEBHOOK_TEMPLATE`, `WEBHOOK_USERNAME` and `WEBHOOK_AVATAR_URL` apply only to Discord and are ignored by ntfy, which needs no template. Customize ntfy delivery through `WEBHOOK_HEADERS` such as `X-Priority` or `X-Tags`
+
 **Bug fixes**:
 
 - **BUGFIX:** **Clearer missing-play alerts** - Outage notifications now identify the first missing Spotify play in plain language and label the displayed tracks as the five most recent when older missing plays are omitted
