@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v3.2.1
+v3.2.2
 
 Tool implementing real-time tracking of Spotify friends music activity:
 https://github.com/misiektoja/spotify_monitor/
@@ -19,7 +19,7 @@ spotipy (optional, used when legacy OAuth app credentials are configured)
 pycookiecheat (optional, used for Chrome, Brave and Chromium cookie import)
 """
 
-VERSION = "3.2.1"
+VERSION = "3.2.2"
 
 
 # ---------------------------
@@ -4500,10 +4500,12 @@ def send_scrobble_health_notification(username: str, evaluation: ScrobbleHealthE
     else:
         count = len(evaluation.unmatched)
         oldest = get_date_from_ts(evaluation.unmatched[0].played_at) if evaluation.unmatched else "unknown"
-        examples = "\n".join(f"- {get_date_from_ts(play.played_at)} | {play.artist} - {play.track}" for play in evaluation.unmatched[-5:])
+        recent_missing = evaluation.unmatched[-5:]
+        examples = "\n".join(f"- {get_date_from_ts(play.played_at)} | {play.artist} - {play.track}" for play in recent_missing)
+        examples_heading = f"{len(recent_missing)} most recent missing plays:" if count > len(recent_missing) else "Missing plays:"
         reminder = " This is a repeat reminder because the outage is still unresolved." if action == "outage_reminder" else ""
         subject = f"spotify_monitor: Spotify scrobbling may be disconnected for {username}"
-        message = f"{count} consecutive completed Spotify plays were not found on Last.fm. The oldest missing play was recorded by Spotify at {oldest}.{reminder}\n\nRecent missing plays:\n{examples}\n\nReauthorize Spotify Scrobbling: {settings_url}\nLast.fm profile: {profile_url}"
+        message = f"{count} consecutive completed Spotify plays were not found on Last.fm. The first missing Spotify play was at {oldest}.{reminder}\n\n{examples_heading}\n{examples}\n\nReauthorize Spotify Scrobbling: {settings_url}\nLast.fm profile: {profile_url}"
         ntfy_tags = "warning,musical_note"
     body = f"{message}\n\nTimestamp: {notification_timestamp}"
     print(f"* {subject}\n{message}")
