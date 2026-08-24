@@ -13,6 +13,8 @@ from pathlib import Path
 
 import pytest
 
+import spotify_monitor as monitor
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 ARTIFACT_ROOT = PROJECT_ROOT / "local" / "package_test_artifacts"
@@ -145,3 +147,22 @@ class TestWorkflowSupplyChain:
                     if "${{" in line:
                         offenders.append(f"{workflow.name}: {line.strip()}")
         assert offenders == []
+
+
+class TestVersionConsistency:
+    # The module, its docstring and the package metadata must agree, since only one of them reaches a user
+    def test_declared_versions_match(self):
+        pyproject = (PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+        packaged = re.search(r'^version = "([^"]+)"', pyproject, re.M)
+        docstring = re.search(r"^v(\d+\.\d+(?:\.\d+)?)\s*$", monitor.__doc__ or "", re.M)
+
+        assert packaged is not None and docstring is not None
+        assert monitor.VERSION == packaged.group(1) == docstring.group(1)
+
+    # Release notes must describe the version the code actually declares, or the notes ship ahead of the code
+    def test_release_notes_lead_with_the_declared_version(self):
+        notes = (PROJECT_ROOT / "RELEASE_NOTES.md").read_text(encoding="utf-8")
+        newest = re.search(r"^# Changes in ([\d.]+)", notes, re.M)
+
+        assert newest is not None
+        assert newest.group(1) == monitor.VERSION
