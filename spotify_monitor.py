@@ -5161,7 +5161,9 @@ def build_clienttoken_request_protobuf(app_version, device_id, system_id, cpu_ar
 def spotify_get_access_token_from_client(device_id, system_id, user_uri_id, refresh_token, client_token):
     global SP_CACHED_ACCESS_TOKEN, SP_CACHED_REFRESH_TOKEN, SP_ACCESS_TOKEN_EXPIRES_AT
 
-    if SP_CACHED_ACCESS_TOKEN and time.time() < SP_ACCESS_TOKEN_EXPIRES_AT and check_token_validity(SP_CACHED_ACCESS_TOKEN, user_agent=USER_AGENT):
+    # Trusted on its cached expiry rather than probed every cycle. A token Spotify rejects early surfaces
+    # as a 401 from the actual request, which clears this cache so the next cycle refreshes it
+    if SP_CACHED_ACCESS_TOKEN and time.time() < SP_ACCESS_TOKEN_EXPIRES_AT:
         debug_print("Using cached Spotify access token (client source)")
         return SP_CACHED_ACCESS_TOKEN
 
@@ -8575,7 +8577,7 @@ def spotify_monitor_friend_uri(user_uri_id, tracks, csv_file_name):
             auth_context = "client_auth" if TOKEN_SOURCE == "client" else "cookie_auth"
             advice = print_monitor_recovery(e, auth_context, recovery_hint_tracker, f"* Error, retrying in {display_time(SPOTIFY_ERROR_INTERVAL)}: ")
 
-            if TOKEN_SOURCE == 'cookie' and advice.code in ("auth.cookie_invalid", "auth.rejected"):
+            if advice.code in ("auth.cookie_invalid", "auth.client_invalid", "auth.rejected"):
                 SP_CACHED_ACCESS_TOKEN = None
 
             if TOKEN_SOURCE == 'client' and advice.code == "auth.client_invalid":
@@ -8832,7 +8834,7 @@ def spotify_monitor_friend_uri(user_uri_id, tracks, csv_file_name):
                             verbose_print(f"{advice.summary}. Automatic retries are active")
                             transient_request_failure_active = True
 
-                        if TOKEN_SOURCE == 'cookie' and advice.code in ("auth.cookie_invalid", "auth.rejected"):
+                        if advice.code in ("auth.cookie_invalid", "auth.client_invalid", "auth.rejected"):
                             SP_CACHED_ACCESS_TOKEN = None
 
                         if advice.code == "spotify.unavailable":
