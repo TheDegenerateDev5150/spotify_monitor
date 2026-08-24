@@ -32,8 +32,6 @@ A configuration file is read as data, not executed. Spotify Monitor accepts only
 
 Anything else is rejected before it runs, including `import` statements, function calls, arithmetic and other expressions, `if` blocks and names the tool does not recognize. Spotify Monitor reports the offending line number and setting, then exits. This is deliberate: it means a `spotify_monitor.conf` that happens to sit in the directory you started the tool from cannot execute code.
 
-> **Upgrading from an earlier version:** configuration files used to be executed as Python. If yours contains an import, a computed value such as `60 * 5` or any other expression, replace it with the resulting literal value, for example `300`.
-
 If the same setting appears in more than one place, the item later in this list wins:
 
 1. Built-in defaults
