@@ -71,6 +71,27 @@ def test_refreshed_cookie_token_skips_duplicate_validity_probe(monkeypatch):
     validity_check.assert_not_called()
 
 
+# Verifies cached client tokens avoid a redundant buddy-list validity probe
+def test_cached_client_token_skips_validity_probe(monkeypatch):
+    validity_check = Mock(side_effect=AssertionError("redundant buddy-list request"))
+    monkeypatch.setattr(monitor, "SP_CACHED_ACCESS_TOKEN", "cached-token")
+    monkeypatch.setattr(monitor, "SP_ACCESS_TOKEN_EXPIRES_AT", time.time() + 300)
+    monkeypatch.setattr(monitor, "check_token_validity", validity_check)
+
+    assert monitor.spotify_get_access_token_from_client("device", "system", "user", "refresh", "client-token") == "cached-token"
+    validity_check.assert_not_called()
+
+
+# Verifies an expired cached client token is refreshed instead of returned
+def test_expired_client_token_is_refreshed(monkeypatch):
+    monkeypatch.setattr(monitor, "SP_CACHED_ACCESS_TOKEN", "stale-token")
+    monkeypatch.setattr(monitor, "SP_ACCESS_TOKEN_EXPIRES_AT", time.time() - 1)
+    monkeypatch.setattr(monitor, "check_token_validity", Mock(side_effect=AssertionError("redundant buddy-list request")))
+    monkeypatch.setattr(monitor, "build_spotify_auth_protobuf", lambda *arguments: b"body")
+    with pytest.raises(Exception):
+        monitor.spotify_get_access_token_from_client("device", "system", "user", "refresh", "")
+
+
 # Verifies externally supplied track text cannot reach a local command sink
 @pytest.mark.parametrize("player", [monitor.spotify_macos_play_song, monitor.spotify_linux_play_song, monitor.spotify_win_play_song])
 def test_playback_rejects_command_injection_before_launch(monkeypatch, player):
