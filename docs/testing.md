@@ -19,6 +19,7 @@ The suite combines several test types:
 - Integration tests use temporary files, SQLite databases and real loopback HTTP and SMTP connections.
 - Packaging tests build the wheel, install it into a clean environment and run the installed command outside the source tree.
 - The offline E2E test runs one complete CLI monitoring iteration against a loopback Spotify fixture.
+- Monitoring-loop tests drive the Friend Activity loop against fake buddy-list responses to check authentication recovery, retry timing, activity flag transitions and track-change recording.
 - Contract tests validate stable documentation commands, links, container assets and publishing workflows.
 - CI smoke tests run the application through Windows, Docker and Docker Compose.
 
