@@ -55,10 +55,12 @@ def test_compose_contract():
     assert "docker compose up --no-log-prefix" in compose
 
 
-# Verifies the debug secret grabber runs non-root and supports host ownership mapping
+# Verifies the debug secret grabber uses the pinned base, runs non-root and supports host ownership mapping
 def test_secret_grabber_container_runtime_contract():
     dockerfile = read_asset("debug/spotify_monitor_secret_grabber_docker/Dockerfile")
     compose = read_asset("debug/spotify_monitor_secret_grabber_docker/compose.yaml")
+    assert "FROM python:3.13-slim-trixie" in dockerfile
+    assert "pip uninstall --yes pip setuptools wheel" in dockerfile
     assert "ARG APP_UID=1000" in dockerfile
     assert "ARG APP_GID=1000" in dockerfile
     assert "PLAYWRIGHT_BROWSERS_PATH=/ms-playwright" in dockerfile
