@@ -462,3 +462,38 @@ def test_flag_file_failure_is_visible_and_disables_integration(monkeypatch, caps
         assert monitor.flag_file_delete() is False
     assert monitor.FLAG_FILE == ""
     assert "Activity flag integration was disabled" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("uri,expected", [
+    ("spotify:user:MiXeD", "https://open.spotify.com/user/MiXeD?si=1"),
+    ("spotify:playlist:37i9dQZF1DX", "https://open.spotify.com/playlist/37i9dQZF1DX?si=1"),
+    ("  spotify:track:abc  ", "https://open.spotify.com/track/abc?si=1"),
+    ("SPOTIFY:TRACK:abc", "https://open.spotify.com/track/abc?si=1"),
+])
+# Verifies a valid URI converts with its identifier case preserved, since Spotify IDs are case sensitive
+def test_convert_uri_to_url_accepts_valid_references(uri, expected):
+    assert monitor.spotify_convert_uri_to_url(uri) == expected
+
+
+@pytest.mark.parametrize("uri", [
+    "spotify:playlist:idspotify:user:evil",
+    "spotify:episode:abc",
+    "spotify:user:",
+    "spotify:user:abc:extra",
+    "::37i9dQZF1DX",
+    "spotify:user",
+    "https://open.spotify.com/user/abc",
+    "",
+    "   ",
+    None,
+    42,
+])
+# Verifies an unsupported or malformed reference yields an empty string instead of a wrong or partial link
+def test_convert_uri_to_url_rejects_unparseable_references(uri):
+    assert monitor.spotify_convert_uri_to_url(uri) == ""
+
+
+# Verifies the object type is matched as a whole part, so an ID containing another type cannot redirect the link
+def test_convert_uri_to_url_matches_whole_parts():
+    assert monitor.spotify_convert_uri_to_url("spotify:album:trackfulID") == "https://open.spotify.com/album/trackfulID?si=1"
+    assert monitor.spotify_convert_uri_to_url("spotify:playlist:userlike") == "https://open.spotify.com/playlist/userlike?si=1"
