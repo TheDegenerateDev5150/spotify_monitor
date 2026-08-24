@@ -33,7 +33,7 @@ python -m pytest
 mkdocs build --strict
 ```
 
-The default suite is offline. It never contacts Spotify or Last.fm and network functions are replaced with local test doubles. See [Testing](https://misiektoja.github.io/spotify_monitor/testing/) for what it covers.
+The default suite is offline. It never contacts Spotify or Last.fm and network functions are replaced with local test doubles. See [tests/README.md](tests/README.md) for what each test file covers and [Testing](https://misiektoja.github.io/spotify_monitor/testing/) for the CI jobs and supply chain checks.
 
 CI additionally runs the suite on Python 3.9 through 3.14, a Windows setup-wizard smoke test and container checks that build the image and exercise Docker Compose. The supported Python floor is 3.9, so avoid syntax and standard-library features added after it.
 
