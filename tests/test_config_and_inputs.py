@@ -404,6 +404,38 @@ def test_config_loader_rejects_unsupported_statements(content, capsys):
     assert "unsupported content" in capsys.readouterr().out
 
 
+# Verifies a configuration written by an older version still loads when it carries retired settings
+def test_config_loader_ignores_retired_settings(capsys):
+    with make_temp_directory() as directory_name:
+        config_path = Path(directory_name) / "legacy.conf"
+        config_path.write_text('TOTP_VER = 0\nSECRET_CIPHER_DICT = {"12": [1, 2]}\nSECRET_CIPHER_DICT_URL = "https://example.invalid/secrets.json"\nSPOTIFY_CHECK_INTERVAL = 45\n', encoding="utf-8")
+        namespace = {}
+        assert monitor.load_config_file(config_path, namespace) is True
+    assert namespace["SPOTIFY_CHECK_INTERVAL"] == 45
+    for retired_setting in monitor.RETIRED_CONFIG_SETTINGS:
+        assert retired_setting not in namespace
+    output = capsys.readouterr().out
+    assert "TOTP_VER" in output
+    assert "are ignored" in output
+
+
+# Verifies retired settings are reported to the caller so Doctor can surface them without printing
+def test_config_loader_reports_retired_settings_to_caller():
+    with make_temp_directory() as directory_name:
+        config_path = Path(directory_name) / "legacy.conf"
+        config_path.write_text("TOTP_VER = 0\nSPOTIFY_CHECK_INTERVAL = 45\n", encoding="utf-8")
+        retired = []
+        assert monitor.load_config_file(config_path, {}, report_errors=False, retired_out=retired) is True
+    assert retired == ["TOTP_VER"]
+
+
+# Verifies ignoring retired names does not weaken rejection of any other unknown setting
+def test_retired_allowance_does_not_accept_other_unknown_names():
+    assert monitor.RETIRED_CONFIG_SETTINGS.isdisjoint(monitor._config_allowed_names())
+    with pytest.raises(ValueError, match="unsupported configuration setting"):
+        monitor.parse_config_content("TOTP_VERSION_TYPO = 1\n")
+
+
 # Verifies invalid Friend Activity timing flags fail during argument validation
 @pytest.mark.parametrize("option", ["--check-interval", "--offline-timer", "--disappeared-timer"])
 def test_nonpositive_friend_activity_timing_flags_are_rejected(option):
