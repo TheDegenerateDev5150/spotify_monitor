@@ -88,7 +88,8 @@ def test_expired_client_token_is_refreshed(monkeypatch):
     monkeypatch.setattr(monitor, "SP_ACCESS_TOKEN_EXPIRES_AT", time.time() - 1)
     monkeypatch.setattr(monitor, "check_token_validity", Mock(side_effect=AssertionError("redundant buddy-list request")))
     monkeypatch.setattr(monitor, "build_spotify_auth_protobuf", lambda *arguments: b"body")
-    with pytest.raises(Exception):
+    # Matching the message keeps the mocked buddy-list AssertionError from satisfying this assertion
+    with pytest.raises(Exception, match="Client token is missing"):
         monitor.spotify_get_access_token_from_client("device", "system", "user", "refresh", "")
 
 
