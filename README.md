@@ -5,6 +5,7 @@
   <img src="https://img.shields.io/pypi/v/spotify_monitor?style=flat-square&color=teal" alt="PyPI Version" />
   <img src="https://img.shields.io/github/stars/misiektoja/spotify_monitor?style=flat-square&color=magenta" alt="GitHub Stars" />
   <img src="https://img.shields.io/badge/python-3.9+-blueviolet?style=flat-square" alt="Python Versions" />
+  <img src="https://img.shields.io/docker/pulls/misiektoja/spotify-monitor?style=flat-square&logo=docker" alt="Docker Pulls" />
   <img src="https://img.shields.io/github/license/misiektoja/spotify_monitor?style=flat-square&color=blue" alt="License" />
   <img src="https://img.shields.io/ossf-scorecard/github.com/misiektoja/spotify_monitor?style=flat-square&label=openssf%20scorecard" alt="OpenSSF Scorecard" />
   <img src="https://img.shields.io/github/last-commit/misiektoja/spotify_monitor?style=flat-square&color=green" alt="Last Commit" />
