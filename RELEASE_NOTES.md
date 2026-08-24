@@ -2,7 +2,7 @@
 
 This is a high-level summary of the most important changes.
 
-# Changes in 3.3 (TBD)
+# Changes in 3.3 (25 Aug 2026)
 
 Version **3.3** focuses on trustworthy alerts and safer configuration. Notification emails can no longer be tampered with through a monitored friend's display name, delivery failures are retried instead of silently lost, false Last.fm outage alerts are gone and a configuration file can no longer run code. Local playback control, connectivity checks and Spotify links were all hardened, and access tokens are reused until they expire, roughly halving Friend Activity requests to Spotify. Release downloads can now be verified before you unpack them, and the project gained a published security policy with private vulnerability reporting plus automated security and supply chain scanning.
 
