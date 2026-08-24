@@ -18,12 +18,14 @@ on:
 env:
   IMAGE_NAME: misiektoja/spotify-monitor
 
-permissions:
-  contents: read
+permissions: {}
 
 jobs:
   test:
     name: Tests and container smoke checks
+    # A called workflow cannot exceed what the calling job grants, so the checkout in tests.yml needs this.
+    permissions:
+      contents: read
     uses: ./.github/workflows/tests.yml
 
   publish-docker:
