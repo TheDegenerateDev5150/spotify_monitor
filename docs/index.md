@@ -1,15 +1,13 @@
 # spotify_monitor
 
-<p align="left">
-  <img src="https://img.shields.io/github/v/release/misiektoja/spotify_monitor?style=flat-square&color=blue" alt="GitHub Release" />
-  <img src="https://img.shields.io/pypi/v/spotify_monitor?style=flat-square&color=teal" alt="PyPI Version" />
-  <img src="https://img.shields.io/github/stars/misiektoja/spotify_monitor?style=flat-square&color=magenta" alt="GitHub Stars" />
-  <img src="https://img.shields.io/badge/python-3.9+-blueviolet?style=flat-square" alt="Python Versions" />
-  <img src="https://img.shields.io/github/license/misiektoja/spotify_monitor?style=flat-square&color=blue" alt="License" />
-  <img src="https://img.shields.io/ossf-scorecard/github.com/misiektoja/spotify_monitor?style=flat-square&label=openssf%20scorecard" alt="OpenSSF Scorecard" />
-  <img src="https://img.shields.io/github/last-commit/misiektoja/spotify_monitor?style=flat-square&color=green" alt="Last Commit" />
-  <img src="https://img.shields.io/badge/maintenance-active-brightgreen?style=flat-square" alt="Maintenance" />
-</p>
+[![GitHub Release](https://img.shields.io/github/v/release/misiektoja/spotify_monitor?style=flat-square&color=blue)](https://github.com/misiektoja/spotify_monitor/releases)
+[![PyPI Version](https://img.shields.io/pypi/v/spotify_monitor?style=flat-square&color=teal)](https://pypi.org/project/spotify-monitor/)
+[![GitHub Stars](https://img.shields.io/github/stars/misiektoja/spotify_monitor?style=flat-square&color=magenta)](https://github.com/misiektoja/spotify_monitor)
+[![Python Versions](https://img.shields.io/badge/python-3.9+-blueviolet?style=flat-square)](https://pypi.org/project/spotify-monitor/)
+[![License](https://img.shields.io/github/license/misiektoja/spotify_monitor?style=flat-square&color=blue)](https://github.com/misiektoja/spotify_monitor/blob/main/LICENSE)
+[![OpenSSF Scorecard](https://img.shields.io/ossf-scorecard/github.com/misiektoja/spotify_monitor?style=flat-square&label=openssf%20scorecard)](https://scorecard.dev/viewer/?uri=github.com/misiektoja/spotify_monitor)
+[![Last Commit](https://img.shields.io/github/last-commit/misiektoja/spotify_monitor?style=flat-square&color=green)](https://github.com/misiektoja/spotify_monitor/commits/main)
+[![Maintenance](https://img.shields.io/badge/maintenance-active-brightgreen?style=flat-square)](https://github.com/misiektoja/spotify_monitor)
 
 Powerful real-time tracker for Spotify friend music activity: monitor listening habits, auto-sync playback to your local Spotify client, detect skipped tracks and receive instant notifications for every beat your friends play.
 
