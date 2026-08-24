@@ -44,7 +44,6 @@ import re
 from datetime import datetime
 import json
 from typing import List, Dict, Any
-from playwright.async_api import async_playwright
 import argparse
 import sys
 
@@ -208,6 +207,15 @@ def summarise(caps: List[Dict[str, Any]], mode=None):
 
 # Extracts TOTP secrets from a live Spotify web-player session
 async def grab_live():
+    try:
+        from playwright.async_api import async_playwright
+    except ImportError:
+        raise ImportError(
+            "\nPlaywright module is required for fetching secrets, please install it using:\n"
+            "  pip install playwright\n"
+            "  playwright install"
+        )
+
     hook = """(()=>{if(globalThis.__secretHookInstalled)return;globalThis.__secretHookInstalled=true;globalThis.__captures=[];
 Object.defineProperty(Object.prototype,'secret',{configurable:true,set:function(v){try{__captures.push({secret:v,version:this.version,obj:this});}catch(e){}
 Object.defineProperty(this,'secret',{value:v,writable:true,configurable:true,enumerable:true});}});})();"""
