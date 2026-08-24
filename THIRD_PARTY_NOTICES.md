@@ -28,6 +28,7 @@ These are not installed with the package and are not redistributed with it.
 | [coverage](https://github.com/nedbat/coveragepy) | Apache-2.0 | Branch coverage measurement |
 | [Hypothesis](https://github.com/HypothesisWorks/hypothesis) | MPL-2.0 | Property-based tests for configuration round-trips |
 | [pyright](https://github.com/microsoft/pyright) | MIT | Static type checking |
+| [Ruff](https://github.com/astral-sh/ruff) | MIT | Linting the module and the test suite |
 | [PyYAML](https://github.com/yaml/pyyaml) | MIT | Validating workflows and issue templates in the test suite |
 | [Playwright](https://github.com/microsoft/playwright-python) | Apache-2.0 | Headless browser for the debug secret grabber |
 | [CycloneDX](https://github.com/CycloneDX/cyclonedx-python) | Apache-2.0 | Software bill of materials in the supply chain workflow |
