@@ -28,4 +28,6 @@ This tool holds credentials for your own Spotify account and records what your f
 
 Every GitHub Actions workflow pins third-party actions to a commit SHA with the version recorded alongside it. The test suite fails when a pin or its version comment is missing, or when a workflow passes an event value straight into a shell. Dependencies, actions and the container base image are tracked by Dependabot. Each change runs secret scanning, a dependency vulnerability audit, an SBOM build and a container image scan. CodeQL analyzes the Python source with the `security-extended` query set, and OpenSSF Scorecard scores the repository's security practices. See [.github/workflows/supply-chain.yml](https://github.com/misiektoja/spotify_monitor/blob/main/.github/workflows/supply-chain.yml) and [THIRD_PARTY_NOTICES.md](https://github.com/misiektoja/spotify_monitor/blob/main/THIRD_PARTY_NOTICES.md).
 
+Publishing to PyPI and to Docker Hub runs the full test suite first and stops if it fails, so no untested artifact is released under the project's name. Both publishing jobs run in a named GitHub environment, and the PyPI upload uses trusted publishing rather than a stored API token.
+
 The default branch and the development branch are protected by rulesets that block deletion and force pushes and require changes to arrive through a pull request.
