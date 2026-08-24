@@ -1604,6 +1604,21 @@ def _format_config_value(value, prefer_double_quotes: bool) -> str:
     raise TypeError(f"Unsupported config value type: {type(value).__name__}")
 
 
+# Settings that earlier versions wrote into generated configuration files and that later releases
+# removed. Ignoring them with a warning keeps an untouched older configuration working on upgrade,
+# while any other unknown name is still rejected so a typo cannot silently do nothing.
+# SECRET_CIPHER_DICT, SECRET_CIPHER_DICT_URL and TOTP_VER shipped in 2.3.1 through 2.9.2 and were
+# replaced in 3.0 by TOTP_VERSION and TOTP_SECRET_CIPHER_BYTES.
+RETIRED_CONFIG_SETTINGS = frozenset(("SECRET_CIPHER_DICT", "SECRET_CIPHER_DICT_URL", "TOTP_VER"))
+
+
+# Describes ignored retired settings in one sentence shared by startup output and Doctor
+def describe_retired_settings(names: Sequence[str]) -> str:
+    listed = ", ".join(sorted(names))
+    verb = "was" if len(names) == 1 else "were"
+    return f"{listed} {verb} removed in a later version and {'is' if len(names) == 1 else 'are'} ignored."
+
+
 # Returns the setting names declared by the trusted built-in config template
 def _config_allowed_names() -> frozenset[str]:
     template_tree = ast.parse(CONFIG_BLOCK, "<built-in-config>", "exec")
@@ -1611,7 +1626,7 @@ def _config_allowed_names() -> frozenset[str]:
 
 
 # Parses allowlisted literal config assignments without executing file content
-def parse_config_content(content: str, filename: str = "<config>") -> dict[str, Any]:
+def parse_config_content(content: str, filename: str = "<config>", retired_out: Optional[List[str]] = None) -> dict[str, Any]:
     tree = ast.parse(content, filename, "exec")
     allowed_names = _config_allowed_names()
     parsed_values: dict[str, Any] = {}
@@ -1619,6 +1634,10 @@ def parse_config_content(content: str, filename: str = "<config>") -> dict[str, 
         if not isinstance(statement, ast.Assign) or len(statement.targets) != 1 or not isinstance(statement.targets[0], ast.Name):
             raise ValueError(f"Line {getattr(statement, 'lineno', '?')}: only NAME = literal assignments are allowed")
         name = statement.targets[0].id
+        if name in RETIRED_CONFIG_SETTINGS and name not in allowed_names:
+            if retired_out is not None and name not in retired_out:
+                retired_out.append(name)
+            continue
         if name not in allowed_names:
             raise ValueError(f"Line {statement.lineno}: unsupported configuration setting {name!r}")
         try:
@@ -6304,13 +6323,18 @@ def find_scrobble_health_config_file(cli_path=None):
     return _find_config_file(cli_path, SCROBBLE_HEALTH_CONFIG_FILENAME)
 
 
-# Loads one UTF-8 literal config atomically and optionally collects structured failures
-def load_config_file(config_path, namespace=None, error_out=None, report_errors=True):
+# Loads one UTF-8 literal config atomically and optionally collects structured failures and ignored settings
+def load_config_file(config_path, namespace=None, error_out=None, report_errors=True, retired_out=None):
     target_namespace = globals() if namespace is None else namespace
+    retired_settings: List[str] = []
     try:
         with open(config_path, "r", encoding="utf-8") as config_file:
             source = config_file.read()
-        target_namespace.update(parse_config_content(source, str(config_path)))
+        target_namespace.update(parse_config_content(source, str(config_path), retired_settings))
+        if retired_out is not None:
+            retired_out.extend(retired_settings)
+        if retired_settings and report_errors:
+            print(f"* Note: {describe_retired_settings(retired_settings)} You can delete them from '{config_path}'.")
         return True
     except SyntaxError as exc:
         details = [f"Config file '{config_path}' has invalid Python syntax"]
@@ -10277,12 +10301,15 @@ def main():
 
     if cfg_path:
         config_errors = []
-        if not load_config_file(cfg_path, error_out=config_errors, report_errors=not args.doctor):
+        config_retired = []
+        if not load_config_file(cfg_path, error_out=config_errors, report_errors=not args.doctor, retired_out=config_retired):
             if args.doctor:
                 for advice in config_errors:
                     doctor_startup_checks.append(make_doctor_check("Configuration", "FAIL", advice.summary, advice.detail, advice))
             else:
                 sys.exit(1)
+        elif config_retired and args.doctor:
+            doctor_startup_checks.append(make_doctor_check("Configuration", "WARN", "Configuration file contains removed settings", f"{describe_retired_settings(config_retired)} Delete them from {cfg_path}"))
 
     try:
         requested_monitor_mode = "scrobble_health" if args.authorize_scrobble_health else args.monitor_mode
