@@ -366,7 +366,7 @@ def test_security_workflows_cover_code_and_supply_chain():
     assert analysis["with"]["publish_results"] is True
 
     supply_chain = read_yaml_asset(".github/workflows/supply-chain.yml")
-    assert {"gitleaks", "pip-audit", "sbom", "image-scan"} <= set(supply_chain["jobs"])
+    assert {"gitleaks", "pip-audit", "sbom", "image-scan", "debug-image-scan"} <= set(supply_chain["jobs"])
 
 
 # Verifies the citation metadata GitHub renders stays parseable and describes this project
