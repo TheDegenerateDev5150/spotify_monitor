@@ -1,7 +1,9 @@
 name: Update GitHub Pages Documentation
 
 on:
+  # Manual refresh: Actions tab -> "Update GitHub Pages Documentation" -> Run workflow
   workflow_dispatch:
+  # Auto refresh after a successful package publish
   workflow_run:
     workflows: ["Publish to PyPI"]
     types: [completed]
