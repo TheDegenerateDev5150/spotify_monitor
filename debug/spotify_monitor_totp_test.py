@@ -337,13 +337,11 @@ def fetch_and_update_secrets():
             print(f"v{v}: '{decoded}'")
         print()
 
-        updated = False
         for ver, secret in secrets.items():
             byte_array = list(secret)
 
             if ver not in SECRET_CIPHER_DICT or SECRET_CIPHER_DICT[ver] != byte_array:
                 SECRET_CIPHER_DICT[ver] = byte_array
-                updated = True
                 _LOGGER.debug(f"Updated secret for version {ver}")
             else:
                 _LOGGER.debug(f"Secret for version {ver} is unchanged")
