@@ -7,13 +7,14 @@ on:
   workflow_dispatch:
   workflow_call:
 
-permissions:
-  contents: read
+permissions: {}
 
 jobs:
   test:
     name: Python ${{ matrix.python-version }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -32,6 +33,8 @@ jobs:
   extras:
     name: Install ${{ matrix.extra }} extra
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -50,6 +53,8 @@ jobs:
   quality:
     name: Type and coverage checks
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Set up Python
@@ -68,6 +73,8 @@ jobs:
   docs-check:
     name: Documentation strict build
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Set up Python
@@ -82,6 +89,8 @@ jobs:
   windows-setup-smoke:
     name: Windows setup and startup smoke checks
     runs-on: windows-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Set up Python
@@ -96,6 +105,8 @@ jobs:
   container-smoke:
     name: Main container smoke checks
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
