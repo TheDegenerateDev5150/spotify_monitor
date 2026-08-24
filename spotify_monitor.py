@@ -1014,7 +1014,6 @@ if sys.version_info < (3, 9):
 import importlib.util
 import ast
 import time
-import string
 import textwrap
 import json
 import os
@@ -5479,7 +5478,7 @@ def spotify_list_friends(friend_activity, access_token):
 
     print(f"Number of friends:\t\t{len(friend_activity['friends'])}\n")
 
-    for index, friend in enumerate(friend_activity["friends"]):
+    for friend in friend_activity["friends"]:
         sp_uri = friend["user"].get("uri").split("spotify:user:", 1)[1]
         sp_username = friend["user"].get("name")
         sp_artist = friend["track"]["artist"].get("name")
@@ -6290,11 +6289,12 @@ def spotify_win_play_song(sp_track_uri_id, method=SPOTIFY_WINDOWS_PLAYING_METHOD
     track_uri = spotify_playback_uri(sp_track_uri_id)
 
     if method == "start-uri":      # start-uri
-        getattr(os, "startfile")(track_uri)
+        # os.startfile exists only on Windows, so the lookup stays dynamic to keep the type checker quiet on other platforms
+        getattr(os, "startfile")(track_uri)  # noqa: B009
     elif method == "spotify-cmd":  # spotify-cmd
         subprocess.call((os.path.expandvars(WIN_SPOTIFY_APP_PATH), f"--uri={track_uri}"))
     else:                          # trigger-url - just trigger track URL in the client
-        getattr(os, "startfile")(spotify_convert_uri_to_url(track_uri))
+        getattr(os, "startfile")(spotify_convert_uri_to_url(track_uri))  # noqa: B009
 
 
 # Finds one optional config file using the selected default filename
@@ -8629,10 +8629,8 @@ def spotify_monitor_friend_uri(user_uri_id, tracks, csv_file_name):
 
             sp_track_uri = sp_data["sp_track_uri"]
             sp_track_uri_id = sp_data["sp_track_uri_id"]
-            sp_album_uri = sp_data["sp_album_uri"]
             sp_playlist_uri = sp_data["sp_playlist_uri"]
 
-            sp_playlist_data = {}
             try:
                 sp_track_data = spotify_get_track_info(sp_accessToken, sp_track_uri)
                 sp_album_image_url = sp_track_data.get("sp_album_image_url", "")
@@ -8960,7 +8958,6 @@ def spotify_monitor_friend_uri(user_uri_id, tracks, csv_file_name):
                     sp_playlist = sp_data["sp_playlist"]
                     sp_track_uri = sp_data["sp_track_uri"]
                     sp_track_uri_id = sp_data["sp_track_uri_id"]
-                    sp_album_uri = sp_data["sp_album_uri"]
                     sp_playlist_uri = sp_data["sp_playlist_uri"]
                     try:
                         sp_track_data = spotify_get_track_info(sp_accessToken, sp_track_uri)
