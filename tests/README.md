@@ -52,7 +52,7 @@ same absent-dependency behavior a user would see.
 | `test_install_method_commands.py` | Install-method detection and the command prefixes shown for pip, manual, Docker and Compose |
 | `test_properties.py` | Property-based parsing, serialization and secret-safety round-trips |
 | `test_offline_e2e.py` | One complete CLI monitoring iteration against a loopback Spotify fixture, marked `e2e` |
-| `test_documentation.py` | Semantic documentation contracts, community health files, issue templates and security workflows |
+| `test_documentation.py` | Semantic documentation contracts, community health files, issue templates and security workflows plus repository metadata: citation, funding, line endings, the declared editor style, the pinned linter and release integrity |
 | `test_container_assets.py` | Dockerfile, Compose and publishing workflow contracts |
 | `test_packaging.py` | Wheel contents, installed console commands, action pinning and version consistency |
 
