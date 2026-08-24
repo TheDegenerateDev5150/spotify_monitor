@@ -87,6 +87,27 @@ jobs:
           path: dist/spotify_monitor.cdx.json
           if-no-files-found: error
 
+  debug-image-scan:
+    name: Debug image vulnerabilities
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Build the debug secret grabber image
+        run: docker build --file debug/spotify_monitor_secret_grabber_docker/Dockerfile --tag spotify-secrets-grabber:scan debug
+
+      - name: Scan the debug secret grabber image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: spotify-secrets-grabber:scan
+          severity: CRITICAL,HIGH
+          # A base-image CVE with no available fix cannot be acted on here, so it does not fail the build.
+          ignore-unfixed: true
+          exit-code: "1"
+
   image-scan:
     name: Container image vulnerabilities
     runs-on: ubuntu-latest
