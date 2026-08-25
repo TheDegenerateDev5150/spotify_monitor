@@ -194,7 +194,7 @@ This installs Spotify Monitor and the optional `pycookiecheat` dependency.
 Artwork in ntfy alerts is optional. Install the artwork extra to attach playlist and album covers to ntfy notifications:
 
 ```sh
-pip install "spotify_monitor[ntfy-images]"
+pip install "spotify_monitor[notification-images]"
 ```
 
 This installs Spotify Monitor and the optional Pillow dependency. Python 3.10 and newer get the current Pillow, while Python 3.9 gets the last release that still supports it. After installing, set `NTFY_IMAGES` to `True` in the configuration file. The Docker images already include this dependency.
@@ -210,7 +210,7 @@ This installs Spotify Monitor and the optional Spotipy dependency. It also inclu
 Extras can be installed together:
 
 ```sh
-pip install "spotify_monitor[browser,legacy-oauth,ntfy-images]"
+pip install "spotify_monitor[browser,legacy-oauth,notification-images]"
 ```
 
 <a id="manual-installation"></a>
