@@ -346,7 +346,7 @@ def test_third_party_notices_cover_every_declared_dependency():
 
     missing = sorted(name for name in declared if name.casefold() not in notices.casefold())
     assert missing == []
-    assert_concepts(notices, "GPL-3.0-or-later", "python:3.13-slim-bookworm", "spotipy")
+    assert_concepts(notices, "GPL-3.0-or-later", "python:3.13-slim-trixie", "spotipy")
 
 
 # Verifies the code scanning and supply chain workflows stay present and keep analyzing this project's language
