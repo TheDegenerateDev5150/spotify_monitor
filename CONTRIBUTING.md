@@ -18,7 +18,7 @@ cd spotify_monitor
 pip install -e '.[test]'
 ```
 
-Add the optional extras when you touch browser cookie import or the legacy OAuth backend:
+The test extra already includes Pillow, which ntfy artwork tests need. Add the remaining optional extras when you touch browser cookie import or the legacy OAuth backend:
 
 ```sh
 pip install -e '.[test,browser,legacy-oauth]'
