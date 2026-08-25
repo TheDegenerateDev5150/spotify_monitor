@@ -1,11 +1,32 @@
 """Regression tests for runtime deadlines, playback commands and cookie polling."""
 
+import ast
 import time
+from pathlib import Path
 from unittest.mock import Mock, call
 
 import pytest
 
 import spotify_monitor as monitor
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+HTTP_METHODS = {"get", "post", "put", "patch", "delete", "head", "options", "request"}
+
+
+# Collects every outgoing HTTP call in the module together with the verify argument it passes
+def http_calls_with_verification():
+    tree = ast.parse((PROJECT_ROOT / "spotify_monitor.py").read_text(encoding="utf-8"))
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+            continue
+        if node.func.attr not in HTTP_METHODS:
+            continue
+        keywords = {keyword.arg: keyword.value for keyword in node.keywords if keyword.arg}
+        if "timeout" not in keywords and "verify" not in keywords:
+            continue
+        verify = keywords.get("verify")
+        yield node.lineno, ast.unparse(node.func.value), None if verify is None else ast.unparse(verify)
 
 
 # Verifies a nested request alarm restores the earlier loop-wide deadline
@@ -134,3 +155,15 @@ def test_windows_playback_uses_argument_vector(monkeypatch):
     monitor.spotify_win_play_song("safeTrack123", method="spotify-cmd")
 
     subprocess_call.assert_called_once_with((r"C:\Spotify\Spotify.exe", "--uri=spotify:track:safeTrack123"))
+
+
+# TLS verification must always come from the documented setting, since a call that hardcodes it either
+# cannot be turned off for a TLS-inspecting proxy or cannot be turned back on for everyone else. This
+# invariant is what the excluded py/request-without-cert-validation CodeQL query would otherwise cover
+def test_every_http_call_verifies_through_the_configured_setting():
+    calls = list(http_calls_with_verification())
+    offenders = [(line, receiver, verify) for line, receiver, verify in calls if verify not in ("VERIFY_SSL", "verify")]
+
+    # A refactor that renames the sessions must not quietly leave this test matching nothing
+    assert len(calls) >= 20
+    assert offenders == []
