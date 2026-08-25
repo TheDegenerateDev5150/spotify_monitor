@@ -37,7 +37,7 @@ These are not installed with the package and are not redistributed with it.
 
 ## Container image
 
-The published Docker image is built on the official [`python:3.13-slim-bookworm`](https://hub.docker.com/_/python) image and inherits the licenses of Debian and the Python distribution it carries.
+The published Docker image is built on the official [`python:3.13-slim-trixie`](https://hub.docker.com/_/python) image and inherits the licenses of Debian and the Python distribution it carries.
 
 The debug secret grabber image is built on the official [`python:3.13-slim-trixie`](https://hub.docker.com/_/python) image and additionally carries the [Chromium](https://www.chromium.org/chromium-projects/) build that Playwright downloads, which is covered by its own BSD-3-Clause and related upstream licenses.
 
