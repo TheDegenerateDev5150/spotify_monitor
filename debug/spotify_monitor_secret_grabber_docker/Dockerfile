@@ -1,4 +1,4 @@
-FROM python:3.13-slim-trixie
+FROM python:3.13-slim-trixie@sha256:7e3a6aca9d74f93cca21a91d86a8dad8c34749afd5b4a98ee481c9c47b9f5ed4
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 ARG APP_UID=1000
