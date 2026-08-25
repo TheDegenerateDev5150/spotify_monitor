@@ -503,4 +503,4 @@ def test_convert_uri_to_url_matches_whole_parts():
 # Verifies ntfy artwork ships disabled and the generated config explains the optional install
 def test_ntfy_images_ships_disabled_and_documents_optional_dependency():
     assert "NTFY_IMAGES = False" in monitor.CONFIG_BLOCK
-    assert 'pip install "spotify_monitor[ntfy-images]"' in monitor.CONFIG_BLOCK
+    assert 'pip install "spotify_monitor[notification-images]"' in monitor.CONFIG_BLOCK
