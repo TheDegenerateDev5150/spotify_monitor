@@ -433,7 +433,7 @@ Spotify Monitor sends the alert body as a native UTF-8 ntfy message and sends th
 Playlist and album artwork is an optional extra for supported ntfy alerts and is disabled by default. It needs the optional Pillow package, which the setup wizard offers to install when you choose ntfy. To add it later, install the extra:
 
 ```sh
-pip install "spotify_monitor[ntfy-images]"
+pip install "spotify_monitor[notification-images]"
 ```
 
 The Docker images already include Pillow. Then enable artwork in `spotify_monitor.conf`:
