@@ -25,12 +25,12 @@ Version **3.3** focuses on trustworthy alerts, a leaner install and safer config
 - **BUGFIX:** **Connectivity check respects configuration** - The startup internet check now honors `CHECK_INTERNET_URL`, `CHECK_INTERNET_TIMEOUT` and `VERIFY_SSL`
 - **BUGFIX:** **Reliable Spotify links** - Links built from a Spotify URI are now parsed exactly instead of guessed
 - **BUGFIX:** **Clearer missing-play alerts** - Outage notifications now name the first missing play and correctly label the displayed tracks
-- **BUGFIX:** **Delivery-aware monitoring alerts** - A failed alert is now retried instead of silently dropped
+- **BUGFIX:** **Delivery-aware monitoring alerts** - Failed Friend Activity and scrobble-health alerts remain pending until every enabled email and webhook channel succeeds. Successful channels are not sent again while another channel retries
 - **BUGFIX:** **No more false Last.fm outages** - Repeated plays are now matched pairwise instead of greedily
 - **BUGFIX:** **Accurate dotenv and activity-file state** - `SIGHUP` now clears removed secrets and resets caches, and activity flag files are written atomically
 - **BUGFIX:** **Safe local playback and durable deadlines** - Track IDs are validated before playback, and the anti-hang watchdog can no longer be disabled by a nested request
 - **BUGFIX:** **Lossless Unicode config and leaner polling** - Generated config preserves emoji, and cached access tokens are reused until expiry, roughly halving Friend Activity requests
-- **BUGFIX:** **Safer debug utilities and container output** - Token validation accepts only HTTPS Spotify destinations without redirects, and the secret grabber runs non-root
+- **BUGFIX:** **Safer debug utilities and container output** - Token validation accepts only HTTPS Spotify destinations without redirects, the secret grabber runs non-root and direct Linux output instructions map host IDs when they differ from 1000
 
 # Changes in 3.2.1 (04 Aug 2026)
 
