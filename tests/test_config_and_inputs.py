@@ -153,6 +153,7 @@ def test_format_config_value_supports_required_types():
 def test_rendered_config_compiles_and_uses_current_non_secret_values(monkeypatch):
     monkeypatch.setattr(monitor, "TARGET_USER_URI_ID", 'path\\with"quote#hash')
     monkeypatch.setattr(monitor, "SPOTIFY_CHECK_INTERVAL", 123)
+    monkeypatch.setattr(monitor, "NTFY_IMAGES", True)
     rendered = monitor.generate_config_with_current_values()
     namespace = {}
     exec(compile(rendered, "<rendered-config>", "exec"), namespace)
@@ -497,3 +498,9 @@ def test_convert_uri_to_url_rejects_unparseable_references(uri):
 def test_convert_uri_to_url_matches_whole_parts():
     assert monitor.spotify_convert_uri_to_url("spotify:album:trackfulID") == "https://open.spotify.com/album/trackfulID?si=1"
     assert monitor.spotify_convert_uri_to_url("spotify:playlist:userlike") == "https://open.spotify.com/playlist/userlike?si=1"
+
+
+# Verifies ntfy artwork ships disabled and the generated config explains the optional install
+def test_ntfy_images_ships_disabled_and_documents_optional_dependency():
+    assert "NTFY_IMAGES = False" in monitor.CONFIG_BLOCK
+    assert 'pip install "spotify_monitor[ntfy-images]"' in monitor.CONFIG_BLOCK
