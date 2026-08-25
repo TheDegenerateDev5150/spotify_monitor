@@ -360,6 +360,14 @@ def test_security_workflows_cover_code_and_supply_chain():
     assert initialize["with"]["languages"] == "python"
     assert codeql["jobs"]["analyze"]["permissions"]["security-events"] == "write"
 
+    # An excluded query is only acceptable while the file says which suite runs and why the exclusion holds
+    assert initialize["with"]["config-file"] == "./.github/codeql/codeql-config.yml"
+    codeql_config = read_yaml_asset(".github/codeql/codeql-config.yml")
+    assert {"uses": "security-extended"} in codeql_config["queries"]
+    excluded = {entry["exclude"]["id"] for entry in codeql_config["query-filters"] if "exclude" in entry}
+    assert excluded == {"py/request-without-cert-validation"}
+    assert "VERIFY_SSL" in read_asset(".github/codeql/codeql-config.yml")
+
     # Publishing the result is what keeps the README badge current, so it must not be silently switched off
     scorecard = read_yaml_asset(".github/workflows/scorecard.yml")
     analysis = next(step for step in scorecard["jobs"]["analysis"]["steps"] if "scorecard-action" in step.get("uses", ""))
