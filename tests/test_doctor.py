@@ -265,9 +265,9 @@ def test_python_version_check():
 
 # Verifies missing optional dependencies are warnings that do not affect normal monitoring
 def test_optional_dependency_reporting():
-    checks = monitor.doctor_check_environment((3, 9, 0), lambda name: None if name in ("spotipy", "pycookiecheat") else object())
+    checks = monitor.doctor_check_environment((3, 9, 0), lambda name: None if name in ("spotipy", "pycookiecheat", "PIL") else object())
     optional = [check for check in checks if "Optional dependency" in check.label]
-    assert len(optional) == 2
+    assert len(optional) == 3
     assert all(check.status == "WARN" for check in optional)
     assert all("Normal monitoring is unaffected" in check.detail for check in optional)
 
@@ -718,3 +718,27 @@ def test_contradictory_action_flags_are_rejected(flag):
     result = run_cli(["--doctor", flag])
     assert result.returncode == 2
     assert "cannot be combined" in result.stderr
+
+
+# Verifies missing artwork support names the current NTFY_IMAGES setting and the install command
+def test_optional_artwork_dependency_explains_ntfy_images(monkeypatch):
+    monkeypatch.setattr(monitor, "NTFY_IMAGES", True)
+    monkeypatch.setattr(monitor, "_wizard_install_method", lambda: "pip")
+    checks = monitor.doctor_check_environment((3, 10, 0), lambda name: None if name == "PIL" else object())
+    check = next(item for item in checks if "Pillow" in item.label)
+
+    assert check.status == "WARN"
+    assert "NTFY_IMAGES is enabled" in check.detail
+    assert "spotify_monitor[ntfy-images]" in check.detail
+
+
+# Verifies artwork guidance inside a container points at the published images instead of pip
+def test_optional_artwork_dependency_guides_container_users(monkeypatch):
+    monkeypatch.setattr(monitor, "NTFY_IMAGES", False)
+    monkeypatch.setattr(monitor, "_wizard_install_method", lambda: "docker")
+    checks = monitor.doctor_check_environment((3, 13, 0), lambda name: None if name == "PIL" else object())
+    check = next(item for item in checks if "Pillow" in item.label)
+
+    assert "currently disabled" in check.detail
+    assert "Docker images" in check.detail
+    assert "pip install" not in check.detail
