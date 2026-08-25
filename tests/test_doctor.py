@@ -497,7 +497,7 @@ def test_optional_oauth_live_metadata_success_uses_no_file_cache(monkeypatch):
     assert check.status == "PASS"
     assert "access succeeded" in check.label.lower()
     token_request.assert_called_once_with("configured-id", "configured-secret", use_file_cache=False)
-    legacy_track.assert_called_once_with("legacy-token", monitor.APP_VALIDATION_TRACK_URI, oauth_app=True)
+    legacy_track.assert_called_once_with("legacy-token", monitor.OAUTH_APP_VALIDATION_TRACK_URI, oauth_app=True)
     web_track.assert_not_called()
 
 
@@ -514,7 +514,7 @@ def test_optional_oauth_live_failure_warns_when_web_fallback_succeeds(monkeypatc
     assert check.status == "WARN"
     assert "fallback succeeded" in check.detail.lower()
     assert "owner has active Spotify Premium" in require_advice(check).fix
-    web_track.assert_called_once_with(monitor.APP_VALIDATION_TRACK_URI)
+    web_track.assert_called_once_with(monitor.OAUTH_APP_VALIDATION_TRACK_URI)
 
 
 # Verifies doctor fails only when both live metadata backends fail
