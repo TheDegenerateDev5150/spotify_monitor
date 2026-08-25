@@ -1007,8 +1007,8 @@ STARTUP_BANNER = r"""
 
 import sys
 
-if sys.version_info < (3, 10):
-    print("* Error: Python version 3.10 or higher required !")
+if sys.version_info < (3, 9):
+    print("* Error: Python version 3.9 or higher required !")
     sys.exit(1)
 
 import importlib.util
@@ -6404,10 +6404,10 @@ def doctor_check_environment(version_info=None, spec_finder: Optional[Callable[[
     checks: List[DoctorCheck] = []
     selected_version = sys.version_info if version_info is None else version_info
     version_text = ".".join(str(part) for part in tuple(selected_version)[:3])
-    if tuple(selected_version)[:2] >= (3, 10):
+    if tuple(selected_version)[:2] >= (3, 9):
         checks.append(make_doctor_check("Environment", "PASS", f"Python {version_text} is supported"))
     else:
-        advice = make_recovery_advice("dependency.missing", f"Python {version_text} is unsupported", "Install Python 3.10 or newer then retry", False)
+        advice = make_recovery_advice("dependency.missing", f"Python {version_text} is unsupported", "Install Python 3.9 or newer then retry", False)
         checks.append(make_doctor_check("Environment", "FAIL", advice.summary, advice=advice))
 
     find_spec = importlib.util.find_spec if spec_finder is None else spec_finder
@@ -6589,7 +6589,7 @@ def doctor_check_authentication(report: DoctorReport) -> List[DoctorCheck]:
             if LOGIN_REQUEST_BODY_FILE:
                 try:
                     parsed_values = parse_login_request_body_file(Path(LOGIN_REQUEST_BODY_FILE).expanduser())
-                    values.update(dict(zip(("DEVICE_ID", "SYSTEM_ID", "USER_URI_ID", "REFRESH_TOKEN"), parsed_values, strict=True)))
+                    values.update(dict(zip(("DEVICE_ID", "SYSTEM_ID", "USER_URI_ID", "REFRESH_TOKEN"), parsed_values)))
                     checks.append(make_doctor_check("Authentication", "PASS", "Login Protobuf file parsed read-only", str(Path(LOGIN_REQUEST_BODY_FILE).expanduser())))
                 except Exception as exc:
                     advice = classify_recovery_error(exc, "file_read", f"Login Protobuf file could not be parsed: {exc}")
@@ -6603,7 +6603,7 @@ def doctor_check_authentication(report: DoctorReport) -> List[DoctorCheck]:
             if CLIENTTOKEN_REQUEST_BODY_FILE:
                 try:
                     parsed_client_values = parse_clienttoken_request_body_file(Path(CLIENTTOKEN_REQUEST_BODY_FILE).expanduser())
-                    client_settings.update(dict(zip(("APP_VERSION", "_DEVICE_ID", "_SYSTEM_ID", "CPU_ARCH", "OS_BUILD", "PLATFORM", "OS_MAJOR", "OS_MINOR", "CLIENT_MODEL"), parsed_client_values, strict=True)))
+                    client_settings.update(dict(zip(("APP_VERSION", "_DEVICE_ID", "_SYSTEM_ID", "CPU_ARCH", "OS_BUILD", "PLATFORM", "OS_MAJOR", "OS_MINOR", "CLIENT_MODEL"), parsed_client_values)))
                     checks.append(make_doctor_check("Authentication", "PASS", "Client-token Protobuf file parsed read-only", str(Path(CLIENTTOKEN_REQUEST_BODY_FILE).expanduser())))
                 except Exception as exc:
                     advice = classify_recovery_error(exc, "file_read", f"Client-token Protobuf file could not be parsed: {exc}")
@@ -7775,7 +7775,7 @@ def _wizard_collect_client_auth(config_values: dict, env_path: Path, secret_upda
                     continue
                 break
             names = ("APP_VERSION", "_DEVICE_ID", "_SYSTEM_ID", "CPU_ARCH", "OS_BUILD", "PLATFORM", "OS_MAJOR", "OS_MINOR", "CLIENT_MODEL")
-            config_values.update({name: value for name, value in zip(names, parsed, strict=True) if not name.startswith("_") and value is not None})
+            config_values.update({name: value for name, value in zip(names, parsed) if not name.startswith("_") and value is not None})
             config_values["CLIENTTOKEN_REQUEST_BODY_FILE"] = str(client_path)
             break
     return result
