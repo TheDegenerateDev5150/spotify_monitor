@@ -233,7 +233,8 @@ def test_secret_grabber_container_pull_contract():
     commands = fenced_code_lines(read_asset("docs/debugging.md"))
     documentation = read_asset("docs/debugging.md")
     compose = read_asset("debug/spotify_monitor_secret_grabber_docker/compose.yaml")
-    assert sum(line.startswith("docker run --rm --pull=always") for line in commands) == 4
+    assert sum(line.startswith("docker run --rm --pull=always") for line in commands) == 5
+    assert 'docker run --rm --pull=always --user "$(id -u):$(id -g)" -e HOME=/tmp -v .:/work -w /work misiektoja/spotify-secrets-grabber --all' in commands
     assert "docker compose run --rm spotify-secrets-grabber --all" in commands
     assert "image: misiektoja/spotify-secrets-grabber:latest" in compose
     assert "pull_policy: always" in compose
