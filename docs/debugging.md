@@ -154,6 +154,12 @@ Generate all three output files at once:
 docker run --rm --pull=always -v .:/work -w /work misiektoja/spotify-secrets-grabber --all
 ```
 
+On native Linux hosts whose user does not use UID and GID 1000, map the direct container to the current account and give its browser a writable home directory:
+
+```sh
+docker run --rm --pull=always --user "$(id -u):$(id -g)" -e HOME=/tmp -v .:/work -w /work misiektoja/spotify-secrets-grabber --all
+```
+
 *For SELinux hosts (Fedora/RHEL), use `-v .:/work:Z`.*
 
 <a id="optional-use-docker-compose-one-command-for-all-oss"></a>
