@@ -16,6 +16,8 @@ def read_asset(relative_path: str) -> str:
 def test_dockerfile_runtime_contract():
     dockerfile = read_asset("Dockerfile")
     assert "FROM python:3.13-slim-trixie" in dockerfile
+    # The base image is digest-pinned so a rebuilt tag cannot change the runtime silently. Dependabot refreshes the digest
+    assert re.search(r"^FROM python:3\.13-slim-trixie@sha256:[0-9a-f]{64}$", dockerfile, re.M)
     # Pending Debian fixes are applied at build time, since the base image lags behind between rebuilds
     assert "apt-get upgrade -y" in dockerfile
     assert "pip uninstall --yes pip" in dockerfile
@@ -63,6 +65,8 @@ def test_secret_grabber_container_runtime_contract():
     dockerfile = read_asset("debug/spotify_monitor_secret_grabber_docker/Dockerfile")
     compose = read_asset("debug/spotify_monitor_secret_grabber_docker/compose.yaml")
     assert "FROM python:3.13-slim-trixie" in dockerfile
+    # The base image is digest-pinned so a rebuilt tag cannot change the runtime silently. Dependabot refreshes the digest
+    assert re.search(r"^FROM python:3\.13-slim-trixie@sha256:[0-9a-f]{64}$", dockerfile, re.M)
     assert "apt-get upgrade -y" in dockerfile
     assert "pip uninstall --yes pip setuptools wheel" in dockerfile
     assert "ARG APP_UID=1000" in dockerfile
