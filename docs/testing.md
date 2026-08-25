@@ -16,7 +16,7 @@ pip install -e '.[lint]'
 python -m ruff check spotify_monitor.py debug tests
 ```
 
-GitHub Actions runs the linter, then the same suite on Python 3.10 through 3.14. It also checks Windows setup, optional dependency installation, the built wheel, strict documentation, Docker and Docker Compose. A separate quality job runs pyright plus subprocess-aware branch coverage. See the [test workflow](https://github.com/misiektoja/spotify_monitor/blob/main/.github/workflows/tests.yml).
+GitHub Actions runs the linter, then the same suite on Python 3.9 through 3.14. It also checks Windows setup, optional dependency installation, the built wheel, strict documentation, Docker and Docker Compose. A separate quality job runs pyright plus subprocess-aware branch coverage. See the [test workflow](https://github.com/misiektoja/spotify_monitor/blob/main/.github/workflows/tests.yml).
 
 The same suite gates every release. Publishing to [PyPI](https://github.com/misiektoja/spotify_monitor/blob/main/.github/workflows/publish.yml) and to [Docker Hub](https://github.com/misiektoja/spotify_monitor/blob/main/.github/workflows/publish-docker.yml) runs it first and stops if anything fails, so a release cannot ship ahead of a passing test run.
 
