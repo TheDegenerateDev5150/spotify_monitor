@@ -864,3 +864,14 @@ def test_spotify_retry_cap_is_unchanged_and_separate():
     webhook_adapter = monitor.WEBHOOK_SESSION.adapters["https://"]
     assert isinstance(webhook_adapter, monitor.HTTPAdapter)
     assert webhook_adapter.max_retries.total == 0
+
+
+# Verifies webhook delivery honors VERIFY_SSL like every other request, so a TLS-inspecting proxy works
+def test_webhook_delivery_honors_the_verification_setting(monkeypatch):
+    configure_webhook(monkeypatch)
+    monkeypatch.setattr(monitor, "VERIFY_SSL", False)
+    webhook_post = Mock(return_value=FakeResponse())
+    monkeypatch.setattr(monitor.WEBHOOK_SESSION, "post", webhook_post)
+
+    assert monitor.send_webhook("Title", "Body", "song") == 0
+    assert webhook_post.call_args.kwargs["verify"] is False
