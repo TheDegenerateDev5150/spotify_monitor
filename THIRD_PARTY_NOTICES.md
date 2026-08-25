@@ -14,7 +14,7 @@ The distributed package contains no vendored third-party source. It declares the
 | [pyotp](https://github.com/pyauth/pyotp) | >=2.9.0 | MIT | TOTP generation for Spotify web-player token refresh |
 | [python-dotenv](https://github.com/theskumar/python-dotenv) | >=0.19 | BSD-3-Clause | Reading secrets from `.env` |
 | [wcwidth](https://github.com/jquast/wcwidth) | >=0.2.7 | MIT | Terminal column widths for aligned output and truncation |
-| [Pillow](https://github.com/python-pillow/Pillow) | >=10.0 | MIT-CMU | Artwork handling for ntfy image notifications |
+| [Pillow](https://github.com/python-pillow/Pillow) | >=12.0.0 on Python 3.10 and newer, >=11.3.0,<12 on Python 3.9, `ntfy-images` extra | MIT-CMU | Artwork handling for ntfy image notifications |
 | [spotipy](https://github.com/spotipy-dev/spotipy) | >=2.24.0, `legacy-oauth` extra | MIT | Legacy Spotify Web API metadata backend |
 | [pycookiecheat](https://github.com/n8henrie/pycookiecheat) | >=0.8, `browser` extra | MIT | Importing Chrome, Brave and Chromium cookies on macOS and Linux |
 
