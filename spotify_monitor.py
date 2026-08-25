@@ -938,7 +938,7 @@ TOKEN_URL = "https://open.spotify.com/api/token"
 WEB_PLAYER_URL = "https://open.spotify.com/"
 WEB_PLAYER_QUERY_URL = "https://api-partner.spotify.com/pathfinder/v2/query"
 WEB_PLAYER_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36"
-OAUTH_APP_VALIDATION_TRACK_URI = "spotify:track:7tFiyTwD0nx5a1eklYtX2J"
+APP_VALIDATION_TRACK_URI = "spotify:track:7tFiyTwD0nx5a1eklYtX2J"
 
 # URL of the endpoint to get server time needed to create TOTP object
 SERVER_TIME_URL = "https://open.spotify.com/"
@@ -3356,14 +3356,14 @@ def send_webhook(title: str, description: str, notification_type: str = "song", 
                 if use_ntfy_image:
                     image_params = dict(ntfy_params)
                     image_params["message"] = ntfy_message
-                    response = WEBHOOK_SESSION.post(str(WEBHOOK_URL).strip(), data=ntfy_image, params=image_params, headers={**request_headers, "Content-Type": "image/jpeg", "X-Filename": NTFY_IMAGE_FILENAME}, timeout=WEBHOOK_TIMEOUT_SECONDS)
+                    response = WEBHOOK_SESSION.post(str(WEBHOOK_URL).strip(), data=ntfy_image, params=image_params, headers={**request_headers, "Content-Type": "image/jpeg", "X-Filename": NTFY_IMAGE_FILENAME}, timeout=WEBHOOK_TIMEOUT_SECONDS, verify=VERIFY_SSL)
                 else:
-                    response = WEBHOOK_SESSION.post(str(WEBHOOK_URL).strip(), data=ntfy_message.encode("utf-8"), params=ntfy_params, headers=request_headers, timeout=WEBHOOK_TIMEOUT_SECONDS)
+                    response = WEBHOOK_SESSION.post(str(WEBHOOK_URL).strip(), data=ntfy_message.encode("utf-8"), params=ntfy_params, headers=request_headers, timeout=WEBHOOK_TIMEOUT_SECONDS, verify=VERIFY_SSL)
             else:
                 if isinstance(discord_payload, str):
-                    response = WEBHOOK_SESSION.post(str(WEBHOOK_URL).strip(), data=discord_payload, headers=request_headers, timeout=WEBHOOK_TIMEOUT_SECONDS)
+                    response = WEBHOOK_SESSION.post(str(WEBHOOK_URL).strip(), data=discord_payload, headers=request_headers, timeout=WEBHOOK_TIMEOUT_SECONDS, verify=VERIFY_SSL)
                 else:
-                    response = WEBHOOK_SESSION.post(str(WEBHOOK_URL).strip(), json=discord_payload, headers=request_headers, timeout=WEBHOOK_TIMEOUT_SECONDS)
+                    response = WEBHOOK_SESSION.post(str(WEBHOOK_URL).strip(), json=discord_payload, headers=request_headers, timeout=WEBHOOK_TIMEOUT_SECONDS, verify=VERIFY_SSL)
             if 200 <= response.status_code <= 299:
                 return 0
             last_error = response
@@ -3895,7 +3895,7 @@ def format_music_urls_email_html(apple_music_url, youtube_music_url, amazon_musi
 def check_token_validity(access_token: str, client_id: Optional[str] = None, user_agent: Optional[str] = None, oauth_app: Optional[bool] = False) -> bool:
     url1 = "https://guc-spclient.spotify.com/presence-view/v1/buddylist"
     # Use a known stable track for validation (Bohemian Rhapsody - Queen)
-    url2 = "https://api.spotify.com/v1/tracks/" + OAUTH_APP_VALIDATION_TRACK_URI.rsplit(":", 1)[-1]
+    url2 = "https://api.spotify.com/v1/tracks/" + APP_VALIDATION_TRACK_URI.rsplit(":", 1)[-1]
 
     url = url2 if oauth_app else url1
     check_mode = "oauth_app" if oauth_app else f"{TOKEN_SOURCE}_token"
@@ -6692,11 +6692,11 @@ def doctor_check_optional_oauth() -> List[DoctorCheck]:
         oauth_token = spotify_get_access_token_from_oauth_app(SP_APP_CLIENT_ID, SP_APP_CLIENT_SECRET, use_file_cache=False)
         if not oauth_token:
             raise RuntimeError("Spotify did not provide a legacy OAuth metadata token")
-        _spotify_get_track_info_api(oauth_token, OAUTH_APP_VALIDATION_TRACK_URI, oauth_app=True)
+        _spotify_get_track_info_api(oauth_token, APP_VALIDATION_TRACK_URI, oauth_app=True)
         return [make_doctor_check("Metadata", "PASS", "Legacy OAuth metadata access succeeded", "A memory-only token and live track metadata request succeeded. No OAuth cache was written")]
     except Exception as legacy_error:
         try:
-            spotify_get_track_info_web(OAUTH_APP_VALIDATION_TRACK_URI)
+            spotify_get_track_info_web(APP_VALIDATION_TRACK_URI)
         except Exception as web_error:
             detail = f"Legacy Web API: {legacy_error}. Web player: {web_error}"
             advice = make_recovery_advice("spotify.unavailable", "Both Spotify metadata backends are unavailable", "Check connectivity and Spotify service availability then run --doctor again with --debug", True, detail)
