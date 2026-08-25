@@ -756,6 +756,28 @@ def test_scrobble_health_monitor_formats_operational_error_notifications(monkeyp
     assert timestamp_mock.call_count == 4
 
 
+# Confirms partial operational-alert success retries only the channel that failed
+@pytest.mark.parametrize(("first_result", "second_result", "retry_email", "retry_webhook"), [((True, False), (False, True), False, True), ((False, True), (True, False), True, False)])
+def test_scrobble_health_operational_alert_retries_failed_channel(monkeypatch, first_result, second_result, retry_email, retry_webhook):
+    delivery_mock = Mock(side_effect=[first_result, second_result])
+    monkeypatch.setattr(monitor, "load_scrobble_health_state", lambda path: {})
+    monkeypatch.setattr(monitor, "spotify_get_recent_plays", Mock(side_effect=RuntimeError("temporary failure")))
+    monkeypatch.setattr(monitor, "print_cur_ts", Mock())
+    monkeypatch.setattr(monitor, "send_notification_channels", delivery_mock)
+    monkeypatch.setattr(monitor, "ERROR_NOTIFICATION", True)
+    monkeypatch.setattr(monitor, "webhook_event_enabled", lambda event: True)
+    monkeypatch.setattr(monitor.time, "sleep", Mock(side_effect=[None, None, None, KeyboardInterrupt]))
+
+    with pytest.raises(KeyboardInterrupt):
+        monitor.spotify_monitor_scrobble_health("lastfm-user", Path("state.json"))
+
+    assert delivery_mock.call_count == 2
+    assert delivery_mock.call_args_list[0].kwargs["email_enabled"] is True
+    assert delivery_mock.call_args_list[0].kwargs["webhook_enabled"] is True
+    assert delivery_mock.call_args_list[1].kwargs["email_enabled"] is retry_email
+    assert delivery_mock.call_args_list[1].kwargs["webhook_enabled"] is retry_webhook
+
+
 # Confirms a successful comparison resets the operational alert failure counter
 def test_scrobble_health_monitor_resets_operational_error_failures_after_success(monkeypatch, capsys):
     spotify_mock = Mock(side_effect=[RuntimeError("failure 1"), [], RuntimeError("failure 2"), RuntimeError("failure 3"), RuntimeError("failure 4")])
@@ -965,27 +987,75 @@ def test_scrobble_health_notification_state_waits_for_delivery_success():
     evaluation = monitor.ScrobbleHealthEvaluation("broken", (spotify_play(900),), latest_spotify_at=900)
 
     pending_state, first_action = monitor.transition_scrobble_health_state(state, evaluation, now=1000, repeat_interval=86400)
-    failed_state = monitor.record_scrobble_health_notification(pending_state, first_action, False, now=1000)
+    failed_state = monitor.record_scrobble_health_notification(pending_state, first_action, (True, False), (False, False), now=1000)
     retry_state, retry_action = monitor.transition_scrobble_health_state(failed_state, evaluation, now=1100, repeat_interval=86400)
-    delivered_state = monitor.record_scrobble_health_notification(retry_state, retry_action, True, now=1100)
+    delivered_state = monitor.record_scrobble_health_notification(retry_state, retry_action, (True, False), (True, False), now=1100)
 
     assert first_action == "outage"
     assert failed_state["pending_notification"] == "outage"
+    assert failed_state["pending_email"] is True
+    assert failed_state["pending_webhook"] is False
     assert failed_state["last_notification_at"] == 0.0
     assert retry_action == "outage"
     assert delivered_state["pending_notification"] == ""
+    assert "pending_email" not in delivered_state
+    assert "pending_webhook" not in delivered_state
     assert delivered_state["last_notification_at"] == 1100
+
+
+# Confirms partial outage-alert success persists and retries only the failed channel
+@pytest.mark.parametrize(("first_result", "expected_pending", "retry_result"), [((True, False), (False, True), (False, True)), ((False, True), (True, False), (True, False))])
+def test_scrobble_health_partial_delivery_retries_failed_channel(monkeypatch, first_result, expected_pending, retry_result):
+    delivery_mock = Mock(side_effect=[first_result, retry_result])
+    monkeypatch.setattr(monitor, "SCROBBLE_HEALTH_NOTIFICATION", True)
+    monkeypatch.setattr(monitor, "webhook_event_enabled", lambda event: True)
+    monkeypatch.setattr(monitor, "send_notification_channels", delivery_mock)
+    monkeypatch.setattr(monitor, "print_cur_ts", Mock())
+    state = {"pending_notification": "outage", "last_notification_at": 0.0, "last_notification_attempt_at": 0.0}
+    evaluation = monitor.ScrobbleHealthEvaluation("broken", (spotify_play(900),), latest_spotify_at=900)
+
+    selected_channels = monitor.pending_scrobble_health_notification_channels(state)
+    first_success = monitor.send_scrobble_health_notification("lastfm-user", evaluation, "outage", selected_channels)
+    pending_state = monitor.record_scrobble_health_notification(state, "outage", selected_channels, first_success, now=1000)
+    retry_channels = monitor.pending_scrobble_health_notification_channels(pending_state)
+    retry_success = monitor.send_scrobble_health_notification("lastfm-user", evaluation, "outage", retry_channels)
+    delivered_state = monitor.record_scrobble_health_notification(pending_state, "outage", retry_channels, retry_success, now=1100)
+
+    assert selected_channels == (True, True)
+    assert retry_channels == expected_pending
+    assert pending_state["pending_email"] is expected_pending[0]
+    assert pending_state["pending_webhook"] is expected_pending[1]
+    assert delivered_state["pending_notification"] == ""
+    assert delivery_mock.call_args_list[1].kwargs["email_enabled"] is expected_pending[0]
+    assert delivery_mock.call_args_list[1].kwargs["webhook_enabled"] is expected_pending[1]
 
 
 # Confirms persisted outage state survives a restart without exposing secrets
 def test_scrobble_health_state_round_trip():
     state_path = Path(__file__).resolve().parents[1] / "local" / f"test-scrobble-health-state-{os.getpid()}.json"
-    state = {"status": "broken", "last_notification_at": 1000.0, "last_notification_attempt_at": 1050.0, "pending_notification": "outage_reminder", "broken_since": 900.0, "broken_latest_spotify_at": 850.0}
+    state = {"status": "broken", "last_notification_at": 1000.0, "last_notification_attempt_at": 1050.0, "pending_notification": "outage_reminder", "pending_email": False, "pending_webhook": True, "broken_since": 900.0, "broken_latest_spotify_at": 850.0}
 
     try:
         monitor.save_scrobble_health_state(state_path, state)
         assert monitor.load_scrobble_health_state(state_path) == state
         assert state_path.stat().st_mode & 0o777 == 0o600
+    finally:
+        if state_path.exists():
+            state_path.unlink()
+
+
+# Confirms incomplete or malformed channel state falls back to the configured delivery channels
+def test_scrobble_health_state_rejects_malformed_pending_channels(monkeypatch):
+    state_path = Path(__file__).resolve().parents[1] / "local" / f"test-scrobble-health-malformed-state-{os.getpid()}.json"
+    monkeypatch.setattr(monitor, "SCROBBLE_HEALTH_NOTIFICATION", True)
+    monkeypatch.setattr(monitor, "webhook_event_enabled", lambda event: True)
+
+    try:
+        state_path.write_text('{"pending_notification":"outage","pending_email":"yes","pending_webhook":true}', encoding="utf-8")
+        state = monitor.load_scrobble_health_state(state_path)
+        assert "pending_email" not in state
+        assert "pending_webhook" not in state
+        assert monitor.pending_scrobble_health_notification_channels(state) == (True, True)
     finally:
         if state_path.exists():
             state_path.unlink()
