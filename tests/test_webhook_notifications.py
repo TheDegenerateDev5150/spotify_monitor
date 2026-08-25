@@ -638,7 +638,7 @@ def test_webhook_wizard_preset_is_hidden_and_offline(monkeypatch):
 def test_webhook_wizard_supports_ntfy(monkeypatch, entered_value, saved_url):
     with make_test_directory() as directory_name:
         destination = Path(directory_name) / ".env"
-        answers = iter([True, False])
+        answers = iter([True, False, False])
         choices = iter([1, 0])
         post = Mock(side_effect=AssertionError("webhook request attempted"))
         monkeypatch.setattr(monitor, "_wizard_ask_yes_no", lambda *args, **kwargs: next(answers))
@@ -652,6 +652,7 @@ def test_webhook_wizard_supports_ntfy(monkeypatch, entered_value, saved_url):
         assert secret_updates == {"WEBHOOK_URL": saved_url}
         assert config_values["WEBHOOK_ENABLED"] is True
         assert config_values["WEBHOOK_PROVIDER"] == "ntfy"
+        assert config_values["NTFY_IMAGES"] is False
         post.assert_not_called()
 
 
@@ -659,7 +660,7 @@ def test_webhook_wizard_supports_ntfy(monkeypatch, entered_value, saved_url):
 def test_webhook_wizard_collects_ntfy_access_token(monkeypatch):
     with make_test_directory() as directory_name:
         destination = Path(directory_name) / ".env"
-        answers = iter([True, True])
+        answers = iter([True, True, True])
         choices = iter([1, 0])
         secrets = iter(["https://ntfy.example.test/private-topic", "tk_private_access_token"])
         post = Mock(side_effect=AssertionError("webhook request attempted"))
@@ -673,6 +674,7 @@ def test_webhook_wizard_collects_ntfy_access_token(monkeypatch):
         assert enabled == ["active", "inactive", "errors"]
         assert secret_updates == {"WEBHOOK_URL": "https://ntfy.example.test/private-topic", "NTFY_ACCESS_TOKEN": "tk_private_access_token"}
         assert "tk_private_access_token" not in str(config_values)
+        assert config_values["NTFY_IMAGES"] is True
         post.assert_not_called()
 
 
@@ -900,3 +902,53 @@ def test_webhook_delivery_refuses_a_destination_that_stopped_validating(monkeypa
     with pytest.raises(monitor.req.exceptions.InvalidURL):
         monitor.post_webhook_request(json={"content": "body"})
     webhook_post.assert_not_called()
+
+
+# Verifies the artwork requirement stays on the last Pillow release that still supports Python 3.9
+def test_ntfy_images_requirement_matches_python_version(monkeypatch):
+    monkeypatch.setattr(monitor.sys, "version_info", (3, 9, 18))
+    assert monitor.ntfy_images_requirement() == "Pillow>=11.3.0,<12"
+    monkeypatch.setattr(monitor.sys, "version_info", (3, 10, 0))
+    assert monitor.ntfy_images_requirement() == "Pillow>=12.0.0"
+
+
+# Verifies the install command names the extra for package installs and nothing for containers
+def test_ntfy_images_install_command_matches_install_method():
+    assert "spotify_monitor[ntfy-images]" in monitor.ntfy_images_install_command("pip")
+    assert "Pillow>=" in monitor.ntfy_images_install_command("manual")
+    assert monitor.ntfy_images_install_command("docker") == ""
+    assert monitor.ntfy_images_install_command("compose") == ""
+
+
+# Verifies the ntfy wizard offers to install artwork support when Pillow is missing
+def test_webhook_wizard_installs_artwork_dependency(monkeypatch):
+    monkeypatch.setattr(monitor, "_wizard_ntfy_images_dependency_available", lambda: False)
+    monkeypatch.setattr(monitor, "_wizard_install_method", lambda: "pip")
+    installer = Mock(return_value=True)
+    monkeypatch.setattr(monitor, "_wizard_install_ntfy_images_dependency", installer)
+    answers = iter([True, True])
+    monkeypatch.setattr(monitor, "_wizard_ask_yes_no", lambda *args, **kwargs: next(answers))
+
+    assert monitor._wizard_collect_ntfy_images() is True
+    installer.assert_called_once_with("pip")
+
+
+# Verifies declining the artwork install keeps ntfy alerts text-only without running pip
+def test_webhook_wizard_declined_artwork_install_keeps_text_only(monkeypatch):
+    monkeypatch.setattr(monitor, "_wizard_ntfy_images_dependency_available", lambda: False)
+    monkeypatch.setattr(monitor, "_wizard_install_method", lambda: "manual")
+    monkeypatch.setattr(monitor, "_wizard_install_ntfy_images_dependency", Mock(side_effect=AssertionError("install attempted")))
+    answers = iter([True, False])
+    monkeypatch.setattr(monitor, "_wizard_ask_yes_no", lambda *args, **kwargs: next(answers))
+
+    assert monitor._wizard_collect_ntfy_images() is False
+
+
+# Verifies a container built without artwork support points the user at the published images
+def test_webhook_wizard_artwork_in_container_points_at_published_image(monkeypatch, capsys):
+    monkeypatch.setattr(monitor, "_wizard_ntfy_images_dependency_available", lambda: False)
+    monkeypatch.setattr(monitor, "_wizard_install_method", lambda: "docker")
+    monkeypatch.setattr(monitor, "_wizard_ask_yes_no", lambda *args, **kwargs: True)
+
+    assert monitor._wizard_collect_ntfy_images() is False
+    assert "published Docker images" in capsys.readouterr().out
