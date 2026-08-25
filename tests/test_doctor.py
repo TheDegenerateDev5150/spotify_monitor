@@ -729,7 +729,7 @@ def test_optional_artwork_dependency_explains_ntfy_images(monkeypatch):
 
     assert check.status == "WARN"
     assert "NTFY_IMAGES is enabled" in check.detail
-    assert "spotify_monitor[ntfy-images]" in check.detail
+    assert "spotify_monitor[notification-images]" in check.detail
 
 
 # Verifies artwork guidance inside a container points at the published images instead of pip
