@@ -19,6 +19,7 @@ Version **3.3** focuses on trustworthy alerts and safer configuration. Notificat
 **Bug fixes**:
 
 - **BUGFIX:** **Hardened email notifications** - A monitored friend's Spotify display name is now escaped everywhere it appears in an email, so a crafted name can no longer inject markup, a live link or a tracking image into a message you trust. Link addresses in HTML emails are escaped as well
+- **BUGFIX:** **Webhook delivery respects `VERIFY_SSL`** - Discord and ntfy deliveries now use the same TLS verification setting as every other request instead of always verifying, so a **TLS-inspecting proxy** setup that works for monitoring no longer fails only for webhooks
 - **BUGFIX:** **Connectivity check respects configuration** - The startup internet check now honors `CHECK_INTERNET_URL`, `CHECK_INTERNET_TIMEOUT` and `VERIFY_SSL` instead of the built-in defaults, and `VERIFY_SSL = False` suppresses insecure-request warnings as intended, so a TLS-inspecting proxy setup is no longer blocked at startup
 - **BUGFIX:** **Reliable Spotify links** - Links built from a Spotify URI are now parsed exactly, so a malformed reference produces no link at all instead of a wrong one
 - **BUGFIX:** **Clearer missing-play alerts** - Outage notifications now name the first missing Spotify play in plain language and label the displayed tracks as the five most recent when older missing plays are omitted
