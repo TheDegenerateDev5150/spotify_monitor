@@ -167,3 +167,16 @@ def test_every_http_call_verifies_through_the_configured_setting():
     # A refactor that renames the sessions must not quietly leave this test matching nothing
     assert len(calls) >= 20
     assert offenders == []
+
+
+# The in-code CodeQL suppression stands in for sanitize_error_text, which the query does not model as a
+# sanitizer. It is only honoured while it sits on its own line directly above the flagged call, so a
+# refactor that moves the redaction or the comment must fail here instead of silently logging in clear text
+def test_debug_logging_suppression_stays_attached_to_its_sanitizer():
+    lines = (PROJECT_ROOT / "spotify_monitor.py").read_text(encoding="utf-8").splitlines()
+    suppressions = [index for index, line in enumerate(lines) if line.strip() == "# codeql[py/clear-text-logging-sensitive-data]"]
+
+    assert len(suppressions) == 1
+    index = suppressions[0]
+    assert "sanitize_error_text(message)" in lines[index + 1]
+    assert any("sanitize_error_text" in line for line in lines[max(index - 4, 0):index] if line.strip().startswith("#"))
