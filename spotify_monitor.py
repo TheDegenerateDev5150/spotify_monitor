@@ -238,7 +238,7 @@ WEBHOOK_TRANSFORMS = []
 NTFY_ACCESS_TOKEN = ""
 
 # Whether to attach playlist or album artwork to supported ntfy alerts
-# Requires the optional Pillow package: pip install "spotify_monitor[ntfy-images]"
+# Requires the optional Pillow package: pip install "spotify_monitor[notification-images]"
 # The published Docker images already include it
 # Image preparation or delivery failures fall back to text
 NTFY_IMAGES = False
@@ -1099,35 +1099,35 @@ try:
     PILImage = PILImageModule
 except ImportError:
     pass
-NTFY_IMAGES_AVAILABLE = PILImage is not None
+NOTIFICATION_IMAGES_AVAILABLE = PILImage is not None
 
 
 # Returns the Pillow requirement that supports the running Python version
-def ntfy_images_requirement() -> str:
+def notification_images_requirement() -> str:
     return "Pillow>=11.3.0,<12" if sys.version_info < (3, 10) else "Pillow>=12.0.0"
 
 
 # Returns the command that installs optional ntfy artwork support, or an empty string inside a container
-def ntfy_images_install_command(method: Optional[str] = None) -> str:
+def notification_images_install_command(method: Optional[str] = None) -> str:
     selected_method = _wizard_install_method() if method is None else method
     if selected_method in ("docker", "compose"):
         return ""
     executable = sys.executable or ("python" if platform.system() == "Windows" else "python3")
-    requirement = "spotify_monitor[ntfy-images]" if selected_method == "pip" else ntfy_images_requirement()
+    requirement = "spotify_monitor[notification-images]" if selected_method == "pip" else notification_images_requirement()
     return _wizard_render_command([executable, "-m", "pip", "install", requirement])
 
 
 # Reimports optional Pillow support after an installation and reports whether artwork is available
-def refresh_ntfy_images_availability() -> bool:
-    global PILImage, NTFY_IMAGES_AVAILABLE
+def refresh_notification_images_availability() -> bool:
+    global PILImage, NOTIFICATION_IMAGES_AVAILABLE
     importlib.invalidate_caches()
     try:
         from PIL import Image as reloaded_image_module
         PILImage = reloaded_image_module
     except ImportError:
         PILImage = None
-    NTFY_IMAGES_AVAILABLE = PILImage is not None
-    return NTFY_IMAGES_AVAILABLE
+    NOTIFICATION_IMAGES_AVAILABLE = PILImage is not None
+    return NOTIFICATION_IMAGES_AVAILABLE
 
 
 # Browsers supported by the sp_dc cookie importer
@@ -3296,7 +3296,7 @@ def spotify_image_url_is_allowed(image_url: str) -> bool:
 
 # Builds one bounded in-memory JPEG for an ntfy attachment
 def build_ntfy_image(image_url: str = "") -> Optional[bytes]:
-    if not NTFY_IMAGES or not image_url or not NTFY_IMAGES_AVAILABLE:
+    if not NTFY_IMAGES or not image_url or not NOTIFICATION_IMAGES_AVAILABLE:
         return None
     try:
         if not spotify_image_url_is_allowed(image_url):
@@ -6445,8 +6445,8 @@ def make_doctor_check(section: str, status: str, label: str, detail: Any = "", a
 
 
 # Explains what missing artwork support means for the current NTFY_IMAGES setting and how to install it
-def doctor_ntfy_images_detail() -> str:
-    install_command = ntfy_images_install_command()
+def doctor_notification_images_detail() -> str:
+    install_command = notification_images_install_command()
     remedy = f"Install it with: {install_command}" if install_command else "The published Docker images already include it, so rebuild from one of them"
     if NTFY_IMAGES:
         return f"NTFY_IMAGES is enabled, so ntfy alerts are sent as text only until Pillow is installed. Normal monitoring is unaffected. {remedy}"
@@ -6489,7 +6489,7 @@ def doctor_check_environment(version_info=None, spec_finder: Optional[Callable[[
             if module_name == "pycookiecheat":
                 missing_purpose = "Required only for importing cookies from Chromium-based browsers. Normal monitoring is unaffected. Firefox cookie import is also unaffected"
             elif module_name == "PIL":
-                missing_purpose = doctor_ntfy_images_detail()
+                missing_purpose = doctor_notification_images_detail()
             else:
                 missing_purpose = f"Optional: {purpose}. Normal monitoring is unaffected when this feature is unused"
             checks.append(make_doctor_check("Environment", "WARN", f"Optional dependency {package_name} is not installed", missing_purpose))
@@ -7349,7 +7349,7 @@ def _wizard_install_chromium_dependency(method: str) -> bool:
 
 
 # Returns whether ntfy artwork support is available in the active Python environment
-def _wizard_ntfy_images_dependency_available() -> bool:
+def _wizard_notification_images_dependency_available() -> bool:
     try:
         return importlib.util.find_spec("PIL") is not None
     except (AttributeError, ImportError, ValueError):
@@ -7357,8 +7357,8 @@ def _wizard_ntfy_images_dependency_available() -> bool:
 
 
 # Installs ntfy artwork support into the active Python environment
-def _wizard_install_ntfy_images_dependency(method: str) -> bool:
-    requirement = "spotify_monitor[ntfy-images]" if method == "pip" else ntfy_images_requirement()
+def _wizard_install_notification_images_dependency(method: str) -> bool:
+    requirement = "spotify_monitor[notification-images]" if method == "pip" else notification_images_requirement()
     executable = sys.executable or ("python" if platform.system() == "Windows" else "python3")
     command = [executable, "-m", "pip", "install", requirement]
     print(f"Installing ntfy artwork support with:\n    {_wizard_render_command(command)}\n")
@@ -7367,7 +7367,7 @@ def _wizard_install_ntfy_images_dependency(method: str) -> bool:
     except OSError as exc:
         print(f"  Installation could not start: {exc}")
         return False
-    if result.returncode == 0 and refresh_ntfy_images_availability():
+    if result.returncode == 0 and refresh_notification_images_availability():
         print("\nntfy artwork support was installed successfully.")
         return True
     print("\nntfy artwork support could not be installed. Keeping ntfy alerts text-only.")
@@ -7666,7 +7666,7 @@ def _wizard_collect_ntfy_access_token(secret_updates: dict, env_path: Path) -> N
 
 # Offers artwork attachments for ntfy alerts and installs the optional Pillow dependency on request
 def _wizard_collect_ntfy_images() -> bool:
-    available = _wizard_ntfy_images_dependency_available()
+    available = _wizard_notification_images_dependency_available()
     if not available:
         print("  Artwork attachments need the optional Pillow package, which is not installed.")
     if not _wizard_ask_yes_no("Attach playlist and album artwork to ntfy alerts?", default=available):
@@ -7681,7 +7681,7 @@ def _wizard_collect_ntfy_images() -> bool:
     if not _wizard_ask_yes_no("Install Pillow now?", default=True):
         print("  Keeping ntfy alerts text-only. Install Pillow later then set NTFY_IMAGES to True.")
         return False
-    return _wizard_install_ntfy_images_dependency(method)
+    return _wizard_install_notification_images_dependency(method)
 
 
 # Collects hidden webhook secrets and mode-appropriate alert choices without sending a message
@@ -10958,10 +10958,10 @@ def main():
     if playback_warning is not None:
         print(f"* Warning: {playback_warning}\n")
 
-    if NTFY_IMAGES and not NTFY_IMAGES_AVAILABLE:
+    if NTFY_IMAGES and not NOTIFICATION_IMAGES_AVAILABLE:
         NTFY_IMAGES = False
         if WEBHOOK_ENABLED and normalized_webhook_provider() == "ntfy":
-            install_command = ntfy_images_install_command()
+            install_command = notification_images_install_command()
             print("*" * HORIZONTAL_LINE)
             print("* WARNING: ntfy artwork is enabled but the optional Pillow package is not installed")
             if install_command:
