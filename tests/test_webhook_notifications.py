@@ -5,10 +5,17 @@ from unittest.mock import Mock
 
 import pytest
 from dotenv import dotenv_values
-from PIL import Image
+
+# Pillow ships as the optional notification-images extra, so only the artwork tests below depend on it
+try:
+    from PIL import Image
+except ImportError:
+    Image = None
 
 import spotify_monitor as monitor
 
+
+requires_pillow = pytest.mark.skipif(Image is None, reason="Pillow is the optional notification-images extra")
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 ARTIFACT_ROOT = PROJECT_ROOT / "local" / "webhook_test_artifacts"
@@ -334,6 +341,7 @@ def test_successful_ntfy_webhook_uses_native_topic_api(monkeypatch):
 
 
 # Verifies ntfy cover art is downloaded with bounds and converted entirely in memory
+@requires_pillow
 def test_ntfy_image_is_bounded_and_built_in_memory(monkeypatch):
     source = BytesIO()
     Image.new("RGB", (320, 640), (12, 34, 56)).save(source, format="PNG")
@@ -366,7 +374,7 @@ def test_ntfy_image_rejects_oversized_download(monkeypatch):
 def test_ntfy_image_respects_pillow_availability_flag(monkeypatch):
     image_get = Mock(side_effect=AssertionError("image download was attempted without Pillow"))
     monkeypatch.setattr(monitor, "NTFY_IMAGES", True)
-    monkeypatch.setattr(monitor, "NTFY_IMAGES_AVAILABLE", False)
+    monkeypatch.setattr(monitor, "NOTIFICATION_IMAGES_AVAILABLE", False)
     monkeypatch.setattr(monitor.WEBHOOK_SESSION, "get", image_get)
     assert monitor.build_ntfy_image("https://i.scdn.co/image/cover.jpg") is None
     image_get.assert_not_called()
@@ -667,6 +675,8 @@ def test_webhook_wizard_collects_ntfy_access_token(monkeypatch):
         monkeypatch.setattr(monitor, "_wizard_ask_yes_no", lambda *args, **kwargs: next(answers))
         monkeypatch.setattr(monitor, "_wizard_ask_secret", lambda *args, **kwargs: next(secrets))
         monkeypatch.setattr(monitor, "_wizard_ask_choice", lambda *args, **kwargs: next(choices))
+        # Pinned so the prompt sequence does not change with whether the optional extra happens to be installed
+        monkeypatch.setattr(monitor, "_wizard_notification_images_dependency_available", lambda: True)
         monkeypatch.setattr(monitor.WEBHOOK_SESSION, "post", post)
         config_values = {}
         secret_updates = {}
@@ -905,27 +915,27 @@ def test_webhook_delivery_refuses_a_destination_that_stopped_validating(monkeypa
 
 
 # Verifies the artwork requirement stays on the last Pillow release that still supports Python 3.9
-def test_ntfy_images_requirement_matches_python_version(monkeypatch):
+def test_notification_images_requirement_matches_python_version(monkeypatch):
     monkeypatch.setattr(monitor.sys, "version_info", (3, 9, 18))
-    assert monitor.ntfy_images_requirement() == "Pillow>=11.3.0,<12"
+    assert monitor.notification_images_requirement() == "Pillow>=11.3.0,<12"
     monkeypatch.setattr(monitor.sys, "version_info", (3, 10, 0))
-    assert monitor.ntfy_images_requirement() == "Pillow>=12.0.0"
+    assert monitor.notification_images_requirement() == "Pillow>=12.0.0"
 
 
 # Verifies the install command names the extra for package installs and nothing for containers
-def test_ntfy_images_install_command_matches_install_method():
-    assert "spotify_monitor[ntfy-images]" in monitor.ntfy_images_install_command("pip")
-    assert "Pillow>=" in monitor.ntfy_images_install_command("manual")
-    assert monitor.ntfy_images_install_command("docker") == ""
-    assert monitor.ntfy_images_install_command("compose") == ""
+def test_notification_images_install_command_matches_install_method():
+    assert "spotify_monitor[notification-images]" in monitor.notification_images_install_command("pip")
+    assert "Pillow>=" in monitor.notification_images_install_command("manual")
+    assert monitor.notification_images_install_command("docker") == ""
+    assert monitor.notification_images_install_command("compose") == ""
 
 
 # Verifies the ntfy wizard offers to install artwork support when Pillow is missing
 def test_webhook_wizard_installs_artwork_dependency(monkeypatch):
-    monkeypatch.setattr(monitor, "_wizard_ntfy_images_dependency_available", lambda: False)
+    monkeypatch.setattr(monitor, "_wizard_notification_images_dependency_available", lambda: False)
     monkeypatch.setattr(monitor, "_wizard_install_method", lambda: "pip")
     installer = Mock(return_value=True)
-    monkeypatch.setattr(monitor, "_wizard_install_ntfy_images_dependency", installer)
+    monkeypatch.setattr(monitor, "_wizard_install_notification_images_dependency", installer)
     answers = iter([True, True])
     monkeypatch.setattr(monitor, "_wizard_ask_yes_no", lambda *args, **kwargs: next(answers))
 
@@ -935,9 +945,9 @@ def test_webhook_wizard_installs_artwork_dependency(monkeypatch):
 
 # Verifies declining the artwork install keeps ntfy alerts text-only without running pip
 def test_webhook_wizard_declined_artwork_install_keeps_text_only(monkeypatch):
-    monkeypatch.setattr(monitor, "_wizard_ntfy_images_dependency_available", lambda: False)
+    monkeypatch.setattr(monitor, "_wizard_notification_images_dependency_available", lambda: False)
     monkeypatch.setattr(monitor, "_wizard_install_method", lambda: "manual")
-    monkeypatch.setattr(monitor, "_wizard_install_ntfy_images_dependency", Mock(side_effect=AssertionError("install attempted")))
+    monkeypatch.setattr(monitor, "_wizard_install_notification_images_dependency", Mock(side_effect=AssertionError("install attempted")))
     answers = iter([True, False])
     monkeypatch.setattr(monitor, "_wizard_ask_yes_no", lambda *args, **kwargs: next(answers))
 
@@ -946,7 +956,7 @@ def test_webhook_wizard_declined_artwork_install_keeps_text_only(monkeypatch):
 
 # Verifies a container built without artwork support points the user at the published images
 def test_webhook_wizard_artwork_in_container_points_at_published_image(monkeypatch, capsys):
-    monkeypatch.setattr(monitor, "_wizard_ntfy_images_dependency_available", lambda: False)
+    monkeypatch.setattr(monitor, "_wizard_notification_images_dependency_available", lambda: False)
     monkeypatch.setattr(monitor, "_wizard_install_method", lambda: "docker")
     monkeypatch.setattr(monitor, "_wizard_ask_yes_no", lambda *args, **kwargs: True)
 
