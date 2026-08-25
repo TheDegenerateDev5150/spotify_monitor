@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM python:3.13-slim-bookworm
+FROM python:3.13-slim-trixie
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
@@ -9,6 +9,9 @@ ENV HOME=/home/spotify
 ENV SPOTIFY_MONITOR_DOCKER=1
 
 WORKDIR /opt/spotify_monitor
+
+# The base image lags behind Debian security updates between its own rebuilds, so they are applied here
+RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt ./requirements.txt
 # pip is only needed to install the requirements, so it is removed from the runtime image
