@@ -257,15 +257,15 @@ def test_dependent_checks_are_skipped_clearly(monkeypatch):
 
 # Verifies Python version support reports pass and fail states
 def test_python_version_check():
-    supported = monitor.doctor_check_environment((3, 10, 0), all_dependencies_present)
-    unsupported = monitor.doctor_check_environment((3, 9, 18), all_dependencies_present)
+    supported = monitor.doctor_check_environment((3, 9, 0), all_dependencies_present)
+    unsupported = monitor.doctor_check_environment((3, 8, 18), all_dependencies_present)
     assert supported[0].status == "PASS"
     assert unsupported[0].status == "FAIL"
 
 
 # Verifies missing optional dependencies are warnings that do not affect normal monitoring
 def test_optional_dependency_reporting():
-    checks = monitor.doctor_check_environment((3, 10, 0), lambda name: None if name in ("spotipy", "pycookiecheat") else object())
+    checks = monitor.doctor_check_environment((3, 9, 0), lambda name: None if name in ("spotipy", "pycookiecheat") else object())
     optional = [check for check in checks if "Optional dependency" in check.label]
     assert len(optional) == 2
     assert all(check.status == "WARN" for check in optional)
@@ -274,7 +274,7 @@ def test_optional_dependency_reporting():
 
 # Verifies Chromium dependency guidance explicitly preserves Firefox import support
 def test_installed_browser_dependency_explains_firefox_support():
-    checks = monitor.doctor_check_environment((3, 10, 0), all_dependencies_present)
+    checks = monitor.doctor_check_environment((3, 9, 0), all_dependencies_present)
     check = next(item for item in checks if "pycookiecheat" in item.label)
 
     assert check.status == "PASS"
