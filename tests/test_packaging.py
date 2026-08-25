@@ -189,7 +189,7 @@ def test_artwork_support_is_an_optional_extra():
 
     runtime_block = re.search(r"^dependencies = \[(.*?)^\]", pyproject, re.M | re.S)
     assert runtime_block is not None and "Pillow" not in runtime_block.group(1)
-    assert "ntfy-images = [\"Pillow>=11.3.0,<12; python_version < '3.10'\", \"Pillow>=12.0.0; python_version >= '3.10'\"]" in pyproject
+    assert "notification-images = [\"Pillow>=11.3.0,<12; python_version < '3.10'\", \"Pillow>=12.0.0; python_version >= '3.10'\"]" in pyproject
     assert not any(line.strip().startswith("Pillow") for line in requirements.splitlines())
     assert '# Pillow>=12.0.0; python_version >= "3.10"' in requirements
 
