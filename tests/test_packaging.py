@@ -180,3 +180,22 @@ class TestVersionConsistency:
 
         assert newest is not None
         assert newest.group(1) == monitor.VERSION
+
+
+# Verifies artwork support ships as an optional extra that keeps Python 3.9 on the last Pillow it supports
+def test_artwork_support_is_an_optional_extra():
+    pyproject = (PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    requirements = (PROJECT_ROOT / "requirements.txt").read_text(encoding="utf-8")
+
+    runtime_block = re.search(r"^dependencies = \[(.*?)^\]", pyproject, re.M | re.S)
+    assert runtime_block is not None and "Pillow" not in runtime_block.group(1)
+    assert "ntfy-images = [\"Pillow>=11.3.0,<12; python_version < '3.10'\", \"Pillow>=12.0.0; python_version >= '3.10'\"]" in pyproject
+    assert not any(line.strip().startswith("Pillow") for line in requirements.splitlines())
+    assert '# Pillow>=12.0.0; python_version >= "3.10"' in requirements
+
+
+# Verifies the runtime image preinstalls artwork support because it ships without pip
+def test_container_image_preinstalls_artwork_support():
+    dockerfile = (PROJECT_ROOT / "Dockerfile").read_text(encoding="utf-8")
+    install_line = next(line for line in dockerfile.splitlines() if "pip install" in line)
+    assert "-r requirements.txt" in install_line and '"Pillow>=12.0.0"' in install_line
