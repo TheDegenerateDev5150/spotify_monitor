@@ -4728,6 +4728,12 @@ def load_scrobble_health_state(path: Union[str, Path]) -> dict:
         state["status"] = payload["status"]
     if payload.get("pending_notification") in ("", "outage", "outage_reminder", "recovery"):
         state["pending_notification"] = payload["pending_notification"]
+    if state["pending_notification"]:
+        pending_email = payload.get("pending_email")
+        pending_webhook = payload.get("pending_webhook")
+        if isinstance(pending_email, bool) and isinstance(pending_webhook, bool):
+            state["pending_email"] = pending_email
+            state["pending_webhook"] = pending_webhook
     for key in ("last_notification_at", "last_notification_attempt_at", "broken_since", "broken_latest_spotify_at"):
         value = payload.get(key)
         if isinstance(value, (int, float)) and not isinstance(value, bool) and value >= 0:
@@ -4759,6 +4765,7 @@ def transition_scrobble_health_state(state: dict, evaluation: ScrobbleHealthEval
     next_state = dict(state)
     previous_status = state.get("status", "unknown")
     pending_notification = str(state.get("pending_notification", ""))
+    previous_pending_notification = pending_notification
     if evaluation.status == "broken":
         if previous_status != "broken":
             next_state["broken_since"] = current_time
@@ -4778,28 +4785,49 @@ def transition_scrobble_health_state(state: dict, evaluation: ScrobbleHealthEval
     else:
         next_state["status"] = evaluation.status
     next_state["pending_notification"] = pending_notification
+    if pending_notification != previous_pending_notification:
+        next_state.pop("pending_email", None)
+        next_state.pop("pending_webhook", None)
     action = pending_notification
     if action in ("outage", "outage_reminder") and evaluation.status != "broken":
         action = ""
     return next_state, action
 
 
-# Records one notification attempt while keeping failed deliveries pending for the next check
-def record_scrobble_health_notification(state: dict, action: str, delivered: bool, now: Optional[float] = None) -> dict:
+# Resolves which configured scrobble-health channels still need the pending alert
+def pending_scrobble_health_notification_channels(state: dict) -> tuple[bool, bool]:
+    email_enabled = bool(SCROBBLE_HEALTH_NOTIFICATION)
+    webhook_enabled = webhook_event_enabled("scrobble_health")
+    if "pending_email" not in state and "pending_webhook" not in state:
+        return email_enabled, webhook_enabled
+    return bool(state.get("pending_email")) and email_enabled, bool(state.get("pending_webhook")) and webhook_enabled
+
+
+# Records one notification attempt while keeping each failed delivery channel pending for the next check
+def record_scrobble_health_notification(state: dict, action: str, selected_channels: tuple[bool, bool], successful_channels: tuple[bool, bool], now: Optional[float] = None) -> dict:
     next_state = dict(state)
     if not action:
         return next_state
     current_time = time.time() if now is None else now
+    email_selected, webhook_selected = selected_channels
+    email_succeeded, webhook_succeeded = successful_channels
+    pending_email = email_selected and not email_succeeded
+    pending_webhook = webhook_selected and not webhook_succeeded
     next_state["last_notification_attempt_at"] = current_time
-    if delivered:
+    if pending_email or pending_webhook:
+        next_state["pending_email"] = pending_email
+        next_state["pending_webhook"] = pending_webhook
+    else:
         next_state["last_notification_at"] = current_time
         if next_state.get("pending_notification") == action:
             next_state["pending_notification"] = ""
+        next_state.pop("pending_email", None)
+        next_state.pop("pending_webhook", None)
     return next_state
 
 
-# Sends one scrobble outage or recovery message and reports whether required delivery completed
-def send_scrobble_health_notification(username: str, evaluation: ScrobbleHealthEvaluation, action: str) -> bool:
+# Sends one scrobble outage or recovery message and reports each selected channel's result
+def send_scrobble_health_notification(username: str, evaluation: ScrobbleHealthEvaluation, action: str, selected_channels: Optional[tuple[bool, bool]] = None) -> tuple[bool, bool]:
     profile_url = f"https://www.last.fm/user/{quote(username, safe='')}"
     settings_url = "https://www.last.fm/settings/applications"
     notification_timestamp = get_cur_ts()
@@ -4819,16 +4847,17 @@ def send_scrobble_health_notification(username: str, evaluation: ScrobbleHealthE
         ntfy_tags = "warning,musical_note"
     body = f"{message}\n\nTimestamp: {notification_timestamp}"
     print(f"* {subject}\n{message}")
-    delivery_selected = SCROBBLE_HEALTH_NOTIFICATION or webhook_event_enabled("scrobble_health")
-    email_succeeded, webhook_succeeded = send_notification_channels("scrobble_health", subject, body, email_enabled=SCROBBLE_HEALTH_NOTIFICATION, ntfy_priority=4, ntfy_tags=ntfy_tags)
+    email_selected, webhook_selected = selected_channels if selected_channels is not None else (bool(SCROBBLE_HEALTH_NOTIFICATION), webhook_event_enabled("scrobble_health"))
+    successful_channels = send_notification_channels("scrobble_health", subject, body, email_enabled=email_selected, webhook_enabled=webhook_selected, ntfy_priority=4, ntfy_tags=ntfy_tags)
     print_cur_ts("\nTimestamp:\t\t\t")
-    return not delivery_selected or email_succeeded or webhook_succeeded
+    return successful_channels
 
 
 # Runs the continuous Spotify-to-Last.fm scrobble health comparison
 def spotify_monitor_scrobble_health(username: str, state_path: Union[str, Path]) -> None:
     state = load_scrobble_health_state(state_path)
-    operational_error_notified = False
+    operational_error_email_notified = False
+    operational_error_webhook_notified = False
     operational_error_failures = 0
     first_successful_check = True
     print(f"* Scrobble health monitoring started for Last.fm profile {username}.")
@@ -4845,8 +4874,9 @@ def spotify_monitor_scrobble_health(username: str, state_path: Union[str, Path])
             evaluation = evaluate_scrobble_health(spotify_plays, lastfm_scrobbles)
             next_state, action = transition_scrobble_health_state(state, evaluation)
             if action:
-                delivered = send_scrobble_health_notification(username, evaluation, action)
-                next_state = record_scrobble_health_notification(next_state, action, delivered)
+                selected_channels = pending_scrobble_health_notification_channels(next_state)
+                successful_channels = send_scrobble_health_notification(username, evaluation, action, selected_channels)
+                next_state = record_scrobble_health_notification(next_state, action, selected_channels, successful_channels)
             if next_state != state:
                 save_scrobble_health_state(state_path, next_state)
                 state = next_state
@@ -4872,7 +4902,8 @@ def spotify_monitor_scrobble_health(username: str, state_path: Union[str, Path])
                 if VERBOSE_MODE:
                     print_cur_ts("\nTimestamp:\t\t\t")
             first_successful_check = False
-            operational_error_notified = False
+            operational_error_email_notified = False
+            operational_error_webhook_notified = False
             operational_error_failures = 0
             time.sleep(SCROBBLE_HEALTH_CHECK_INTERVAL)
         except Exception as exc:
@@ -4884,11 +4915,15 @@ def spotify_monitor_scrobble_health(username: str, state_path: Union[str, Path])
             notifications_enabled = ERROR_NOTIFICATION or webhook_event_enabled("error")
             if operational_error_failures < SCROBBLE_HEALTH_ERROR_NOTIFICATION_FAILURES and notifications_enabled:
                 print(f"* Operational alert deferred until {SCROBBLE_HEALTH_ERROR_NOTIFICATION_FAILURES} consecutive check failures.")
-            if operational_error_failures >= SCROBBLE_HEALTH_ERROR_NOTIFICATION_FAILURES and not operational_error_notified and notifications_enabled:
+            if operational_error_failures >= SCROBBLE_HEALTH_ERROR_NOTIFICATION_FAILURES and notifications_enabled:
                 subject = "spotify_monitor: scrobble health check error"
                 body = f"The Spotify-to-Last.fm comparison failed {operational_error_failures} consecutive times. Existing outage state was preserved.\n\n{recovery_advice.summary}\nTo fix: {recovery_advice.fix}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
-                email_succeeded, webhook_succeeded = send_notification_channels("error", subject, body, email_enabled=ERROR_NOTIFICATION)
-                operational_error_notified = email_succeeded or webhook_succeeded
+                email_pending = ERROR_NOTIFICATION and not operational_error_email_notified
+                webhook_pending = webhook_event_enabled("error") and not operational_error_webhook_notified
+                if email_pending or webhook_pending:
+                    email_succeeded, webhook_succeeded = send_notification_channels("error", subject, body, email_enabled=email_pending, webhook_enabled=webhook_pending)
+                    operational_error_email_notified = operational_error_email_notified or email_succeeded
+                    operational_error_webhook_notified = operational_error_webhook_notified or webhook_succeeded
             print_cur_ts("Timestamp:\t\t\t")
             time.sleep(SPOTIFY_ERROR_INTERVAL)
 
