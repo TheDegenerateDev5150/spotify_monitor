@@ -13,7 +13,7 @@ Choose either the Python path or the container path.
 
 **Python path**:
 
-- [Python](https://www.python.org/downloads/) 3.9 or higher
+- [Python](https://www.python.org/downloads/) 3.10 or higher
 - Core libraries: `requests`, `python-dateutil`, `urllib3`, `pyotp`, `python-dotenv`, `wcwidth`, `Pillow`
 - [spotipy](https://github.com/spotipy-dev/spotipy) is optional and is needed only for legacy OAuth metadata access
 - [pycookiecheat](https://github.com/n8henrie/pycookiecheat) is optional and is needed only to import cookies from Chrome, Brave or Chromium
@@ -43,7 +43,7 @@ It should work on other versions of macOS, Linux, Unix and Windows as well.
 <a id="new-to-python-install-everything"></a>
 ## New to Python: check and install
 
-Use this section if you are new to Python or do not know what is already installed. The platform sections only prepare Python and `pip`. Everyone then uses the same Spotify Monitor installation and setup commands. Spotify Monitor requires Python 3.9 or newer and is currently tested through Python 3.14.
+Use this section if you are new to Python or do not know what is already installed. The platform sections only prepare Python and `pip`. Everyone then uses the same Spotify Monitor installation and setup commands. Spotify Monitor requires Python 3.10 or newer and is currently tested through Python 3.14.
 
 ### Check whether Spotify Monitor is already installed
 
@@ -62,7 +62,7 @@ Check Python and `pip`:
     python --version
     pip --version
 
-If both commands work and Python reports version 3.9 or newer, skip to [Install Spotify Monitor](#install-spotify-monitor-after-python-check).
+If both commands work and Python reports version 3.10 or newer, skip to [Install Spotify Monitor](#install-spotify-monitor-after-python-check).
 
 If either command fails:
 
@@ -90,7 +90,7 @@ Check Python and `pip`:
     python3 --version
     pip --version
 
-If both commands work and Python reports version 3.9 or newer, skip to [Install Spotify Monitor](#install-spotify-monitor-after-python-check).
+If both commands work and Python reports version 3.10 or newer, skip to [Install Spotify Monitor](#install-spotify-monitor-after-python-check).
 
 If either command fails:
 
@@ -116,7 +116,7 @@ Open Terminal then check Python and `pip`:
     python3 --version
     pip --version
 
-If both commands work and Python reports version 3.9 or newer, skip to [Install Spotify Monitor](#install-spotify-monitor-after-python-check).
+If both commands work and Python reports version 3.10 or newer, skip to [Install Spotify Monitor](#install-spotify-monitor-after-python-check).
 
 If either command fails, install the missing packages:
 
@@ -130,7 +130,7 @@ Check both commands again:
     python3 --version
     pip --version
 
-If Python reports a version older than 3.9, follow your distribution's instructions to install a supported Python version before continuing. For another Linux distribution, install Python 3.9 or newer plus `pip` through its package manager.
+If Python reports a version older than 3.10, follow your distribution's instructions to install a supported Python version before continuing. For another Linux distribution, install Python 3.10 or newer plus `pip` through its package manager.
 
 <a id="install-spotify-monitor-after-python-check"></a>
 ### Install Spotify Monitor
