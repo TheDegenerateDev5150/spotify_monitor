@@ -2,7 +2,7 @@
 
 This is a high-level summary of the most important changes.
 
-# Changes in 3.3 (25 Aug 2026)
+# Changes in 3.3 (26 Aug 2026)
 
 Version **3.3** focuses on trustworthy alerts, a leaner install and safer configuration. A friend's display name can no longer inject content into emails, delivery failures are retried instead of lost, false Last.fm outage alerts are gone and configuration files can no longer run code. Pillow became optional, access tokens are now reused until they expire and releases can be verified before you unpack them.
 
@@ -12,7 +12,7 @@ Version **3.3** focuses on trustworthy alerts, a leaner install and safer config
 - **IMPROVE:** **Automatically published secret grabber image** - The debug image is now built, versioned and published automatically, and rebuilt weekly for security updates
 - **IMPROVE:** **Continuous security scanning** - Dependencies, images and source are scanned on every change and weekly, with a published SBOM and a public OpenSSF Scorecard rating
 - **IMPROVE:** **Clearer ntfy webhook customization** - `WEBHOOK_TEMPLATE`, `WEBHOOK_USERNAME` and `WEBHOOK_AVATAR_URL` are documented as Discord-only; customize ntfy delivery through `WEBHOOK_HEADERS`
-- **IMPROVE:** **Leaner install with optional ntfy artwork** - **Pillow is no longer required**; ntfy artwork moved to the `ntfy-images` extra and `NTFY_IMAGES` now defaults to `False`. Install with `pip install "spotify_monitor[ntfy-images]"` or let setup do it for you. **Upgraders who want cover art back should set `NTFY_IMAGES = True`**
+- **IMPROVE:** **Leaner install with optional ntfy artwork** - **Pillow is no longer required**; ntfy artwork moved to the `notification-images` extra and `NTFY_IMAGES` now defaults to `False`. Install with `pip install "spotify_monitor[notification-images]"` or let setup do it for you. **Upgraders who want cover art back should set `NTFY_IMAGES = True`**
 - **IMPROVE:** **Verifiable release downloads** - Releases now ship a `SHA256SUMS.txt` and a signed build attestation, checkable with `gh attestation verify`
 - **IMPROVE:** **Guarded, reproducible releases** - PyPI and Docker Hub releases can no longer publish unless the full test suite passes, and `--version` is checked against package metadata and these notes
 - **IMPROVE:** **Security policy and support guidance** - Added private vulnerability reporting, [SUPPORT.md](https://github.com/misiektoja/spotify_monitor/blob/main/SUPPORT.md), contribution guidance and issue templates that collect version, install method and `--doctor` output
