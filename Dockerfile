@@ -14,8 +14,9 @@ WORKDIR /opt/spotify_monitor
 RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt ./requirements.txt
+# Pillow is optional for source installs but is preinstalled here because the runtime image ships without pip, so NTFY_IMAGES can be turned on without rebuilding
 # pip is only needed to install the requirements, so it is removed from the runtime image
-RUN /usr/local/bin/python -m pip install --no-cache-dir -r requirements.txt && /usr/local/bin/python -m pip uninstall --yes pip
+RUN /usr/local/bin/python -m pip install --no-cache-dir -r requirements.txt "Pillow>=12.0.0" && /usr/local/bin/python -m pip uninstall --yes pip
 
 RUN groupadd --system --gid 10001 spotify && useradd --system --uid 10001 --gid spotify --create-home --home-dir /home/spotify --shell /usr/sbin/nologin spotify
 
