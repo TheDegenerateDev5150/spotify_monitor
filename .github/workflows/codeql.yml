@@ -32,7 +32,8 @@ jobs:
           languages: python
           # Python needs no compilation, so nothing is built before the database is created.
           build-mode: none
-          queries: security-extended
+          # The config file carries the query suite and the one documented query exclusion.
+          config-file: ./.github/codeql/codeql-config.yml
 
       - name: Perform CodeQL analysis
         uses: github/codeql-action/analyze@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4.37.7
