@@ -21,6 +21,26 @@ updates:
     groups:
       docker:
         patterns: ["*"]
+    ignore:
+      # Digest and patch refreshes only, so a Python major or minor move stays a deliberate upgrade
+      - dependency-name: "python"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+    commit-message:
+      prefix: "build"
+
+  # Base image in the debug secret grabber Dockerfile
+  - package-ecosystem: "docker"
+    directory: "/debug/spotify_monitor_secret_grabber_docker"
+    target-branch: "dev"
+    schedule:
+      interval: "weekly"
+    groups:
+      docker-debug:
+        patterns: ["*"]
+    ignore:
+      # Digest and patch refreshes only, so a Python major or minor move stays a deliberate upgrade
+      - dependency-name: "python"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
     commit-message:
       prefix: "build"
 
