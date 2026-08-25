@@ -27,13 +27,13 @@ New to Python or unsure what is installed? Follow the [Python install walkthroug
 pip install spotify_monitor
 ```
 
-Run setup for friend activity mode (Spotify friend's completed plays, activity status and listening session):
+Run setup for **friend activity mode** (Spotify friend's completed plays, activity status and listening session):
 
 ```sh
 spotify_monitor --setup
 ```
 
-Or for Last.fm scrobble health mode (checks whether plays from your Spotify account reach your Last.fm profile):
+Or for **Last.fm scrobble health mode** (checks whether plays from your Spotify account reach your Last.fm profile):
 ```sh
 spotify_monitor --setup-scrobble-health
 ```
