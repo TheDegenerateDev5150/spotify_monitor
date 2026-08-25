@@ -31,6 +31,8 @@ def http_calls_with_verification():
 
 # Verifies a nested request alarm restores the earlier loop-wide deadline
 def test_nested_timeout_alarm_restores_outer_deadline(monkeypatch):
+    if not hasattr(monitor.signal, "setitimer"):
+        pytest.skip("POSIX interval timers are unavailable on Windows")
     get_handler = Mock(side_effect=["original-handler", monitor.timeout_handler])
     get_timer = Mock(side_effect=[(0.0, 0.0), (28.0, 0.0)])
     set_handler = Mock()
@@ -61,7 +63,7 @@ def test_nested_timeout_alarm_restores_outer_deadline(monkeypatch):
 def test_timeout_alarm_is_noop_on_windows(monkeypatch):
     get_timer = Mock()
     monkeypatch.setattr(monitor.platform, "system", lambda: "Windows")
-    monkeypatch.setattr(monitor.signal, "getitimer", get_timer)
+    monkeypatch.setattr(monitor.signal, "getitimer", get_timer, raising=False)
 
     assert monitor._start_timeout_alarm(30) is None
     monitor._restore_timeout_alarm(None)
