@@ -10,7 +10,7 @@ readme = "README.md"
 license = "GPL-3.0-or-later"
 license-files = ["LICEN[CS]E*"]
 authors = [{ name = "Michal Szymanski", email = "misiektoja-pypi@rm-rf.ninja" }]
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 dependencies = [
   "requests>=2.0",
   "python-dateutil>=2.8",
@@ -18,11 +18,10 @@ dependencies = [
   "pyotp>=2.9.0",
   "python-dotenv>=0.19",
   "wcwidth>=0.2.7",
-  "Pillow>=10.0",
+  "Pillow>=12.3.0",
 ]
 classifiers = [
   "Programming Language :: Python :: 3",
-  "Programming Language :: Python :: 3.9",
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
@@ -62,7 +61,7 @@ include = ["debug*"]
 namespaces = true
 
 [tool.ruff]
-target-version = "py39"
+target-version = "py310"
 
 [tool.ruff.lint]
 # Defect rules only: syntax errors, pyflakes and bugbear. Formatting and import order are left
