@@ -430,13 +430,19 @@ spotify_monitor --set-webhook-url
 
 Spotify Monitor sends the alert body as a native UTF-8 ntfy message and sends the alert subject as its title. Query parameters already present in the topic URL are preserved. This allows the ntfy [`auth` query parameter](https://docs.ntfy.sh/publish/#authentication) when a protected topic needs authentication.
 
-Playlist and album artwork is enabled by default for supported ntfy alerts. To keep ntfy alerts text-only, disable images in `spotify_monitor.conf`:
+Playlist and album artwork is an optional extra for supported ntfy alerts and is disabled by default. It needs the optional Pillow package, which the setup wizard offers to install when you choose ntfy. To add it later, install the extra:
 
-```ini
-NTFY_IMAGES = False
+```sh
+pip install "spotify_monitor[ntfy-images]"
 ```
 
-Active and inactive alerts use playlist artwork when available then fall back to album artwork. Tracked-song, every-song and loop alerts use album artwork. Error alerts and `--send-test-webhook` remain text-only. Spotify Monitor accepts only Spotify HTTPS CDN image URLs, limits downloads to 5 MiB and rejects oversized decoded images before preparing each attachment in memory. PyPI, requirements-file and Docker installs include Pillow. Manual single-file users who install dependencies individually must include Pillow. If image preparation fails, the alert is sent as text. If the attachment upload fails, the alert is retried once as text so artwork cannot suppress the notification. Self-hosted ntfy servers must allow attachments.
+The Docker images already include Pillow. Then enable artwork in `spotify_monitor.conf`:
+
+```ini
+NTFY_IMAGES = True
+```
+
+Active and inactive alerts use playlist artwork when available then fall back to album artwork. Tracked-song, every-song and loop alerts use album artwork. Error alerts and `--send-test-webhook` remain text-only. Spotify Monitor accepts only Spotify HTTPS CDN image URLs, limits downloads to 5 MiB and rejects oversized decoded images before preparing each attachment in memory. If `NTFY_IMAGES` is enabled while Pillow is missing, startup says so, names the exact install command and keeps sending text-only alerts. `--doctor` reports the same under its environment checks. If image preparation fails, the alert is sent as text. If the attachment upload fails, the alert is retried once as text so artwork cannot suppress the notification. Self-hosted ntfy servers must allow attachments.
 
 For compact activity notifications on phones and smartwatches, enable the short ntfy format in `spotify_monitor.conf`:
 
