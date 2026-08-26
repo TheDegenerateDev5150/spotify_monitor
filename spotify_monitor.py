@@ -7014,24 +7014,34 @@ def render_doctor_report(report: DoctorReport) -> str:
     return sanitize_error_text("\n".join(lines))
 
 
+# Returns the raw terminal stream for trusted Doctor cursor movement
+def _doctor_terminal_stream():
+    stream = sys.stdout
+    while isinstance(stream, (Logger, TerminalStream)):
+        stream = stream.terminal
+    return stream
+
+
 # Shows one transient doctor step only on an interactive terminal
 def _doctor_progress(label: str) -> None:
-    if sys.stdout.isatty():
+    terminal = _doctor_terminal_stream()
+    if terminal.isatty():
         previous_width = getattr(_doctor_progress, "width", 0)
         if previous_width:
-            sys.stdout.write("\r" + (" " * previous_width) + "\r")
-        line = f"* Checking {label} ..."
+            terminal.write("\r" + (" " * previous_width) + "\r")
+        line = f"* Checking {sanitize_terminal_text(label)} ..."
         _doctor_progress.width = len(line)  # type: ignore[attr-defined]
-        sys.stdout.write("\r" + line)
-        sys.stdout.flush()
+        terminal.write("\r" + line)
+        terminal.flush()
 
 
 # Clears the transient doctor progress line on an interactive terminal
 def _doctor_progress_clear() -> None:
+    terminal = _doctor_terminal_stream()
     width = getattr(_doctor_progress, "width", 0)
-    if sys.stdout.isatty() and width:
-        sys.stdout.write("\r" + (" " * width) + "\r")
-        sys.stdout.flush()
+    if terminal.isatty() and width:
+        terminal.write("\r" + (" " * width) + "\r")
+        terminal.flush()
         _doctor_progress.width = 0  # type: ignore[attr-defined]
 
 
