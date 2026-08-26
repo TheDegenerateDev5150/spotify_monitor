@@ -979,6 +979,10 @@ WEBHOOK_GUIDE_URL = DOCUMENTATION_URL + "/configuration/#webhook-settings"
 SECRETS_GUIDE_URL = DOCUMENTATION_URL + "/configuration/#storing-secrets"
 INTERVALS_GUIDE_URL = DOCUMENTATION_URL + "/usage/#check-intervals"
 DOCTOR_GUIDE_URL = DOCUMENTATION_URL + "/troubleshooting/#doctor-preflight"
+
+# Labels of the two Doctor checks that gate the optional delivery tests, matched by prefix so each can name its channel
+SMTP_READY_CHECK_LABEL = "SMTP connection and login succeeded"
+WEBHOOK_READY_CHECK_LABEL = "Webhook URL and alert choices look valid"
 OAUTH_GUIDE_URL = DOCUMENTATION_URL + "/configuration/#spotify-oauth-app"
 SCROBBLE_AUTH_GUIDE_URL = DOCUMENTATION_URL + "/configuration/#spotify-recent-play-authorization"
 SPOTIFY_WEB_LOGIN_URL = "https://open.spotify.com/"
@@ -6874,7 +6878,7 @@ def doctor_check_notifications() -> List[DoctorCheck]:
             smtp_object.quit()
         finally:
             smtp_object = None
-        return [make_doctor_check("Notifications", "PASS", "SMTP connection and login succeeded", "No email was sent during this passive check")]
+        return [make_doctor_check("Notifications", "PASS", SMTP_READY_CHECK_LABEL, "No email was sent during this passive check")]
     except Exception as exc:
         advice = classify_recovery_error(exc, "smtp")
         return [make_doctor_check("Notifications", "FAIL", advice.summary, advice.detail, advice)]
@@ -6907,7 +6911,7 @@ def doctor_check_webhook_notifications() -> List[DoctorCheck]:
     if not webhook_notifications_enabled():
         advice = make_recovery_advice("webhook.invalid", "Webhook alerts are on but no alert types are selected", "Turn on at least one webhook alert in spotify_monitor.conf or set WEBHOOK_ENABLED to False", False)
         return [make_doctor_check("Notifications", "WARN", advice.summary, "No webhook was sent during this passive check", advice)]
-    return [make_doctor_check("Notifications", "PASS", "Webhook URL and alert choices look valid", "The private link was not displayed. No webhook was sent during this passive check")]
+    return [make_doctor_check("Notifications", "PASS", f"{WEBHOOK_READY_CHECK_LABEL} for {webhook_provider_display_name()}", "The private link was not displayed. No webhook was sent during this passive check")]
 
 
 # Prompts for explicit doctor delivery consent and defaults safely to no
@@ -6925,17 +6929,17 @@ def _doctor_ask_yes_no(question: str) -> bool:
         print("  Please answer 'y' or 'n'.")
 
 
-# Returns whether one exact doctor check passed
+# Returns whether the doctor check owning one label prefix passed
 def _doctor_report_has_pass(report: DoctorReport, label: str) -> bool:
-    return any(check.status == "PASS" and check.label == label for check in report.checks)
+    return any(check.status == "PASS" and check.label.startswith(label) for check in report.checks)
 
 
 # Offers separate real delivery tests only after interactive confirmation
 def _doctor_offer_notification_tests(report: DoctorReport) -> List[DoctorCheck]:
     if not sys.stdin.isatty() or not sys.stdout.isatty():
         return []
-    email_ready = _doctor_report_has_pass(report, "SMTP connection and login succeeded")
-    webhook_ready = _doctor_report_has_pass(report, "Webhook URL and alert choices look valid")
+    email_ready = _doctor_report_has_pass(report, SMTP_READY_CHECK_LABEL)
+    webhook_ready = _doctor_report_has_pass(report, WEBHOOK_READY_CHECK_LABEL)
     if not email_ready and not webhook_ready:
         return []
     print("\nOptional delivery tests\n")
