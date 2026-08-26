@@ -17,6 +17,7 @@ Version **3.3** fixes **false Last.fm outage alerts**, retries **failed alert de
 - **IMPROVE:** **Automated checks on every change** - A pinned Ruff lint pass now runs in CI ahead of the test suite, which covers Python 3.9 through 3.14 plus a Windows job. Optional pre-commit hooks and a shared `.editorconfig` catch the same issues before you commit
 - **IMPROVE:** **Continuous security scanning** - Dependencies, images and source are scanned on every change and weekly, with a published SBOM, Dependabot coverage for Python dependencies and a public OpenSSF Scorecard rating
 - **IMPROVE:** **Security policy and support guidance** - Added private vulnerability reporting, [SUPPORT.md](https://github.com/misiektoja/spotify_monitor/blob/main/SUPPORT.md), contribution guidance, a code of conduct, a dependency licensing notice and issue templates that collect version, install method and `--doctor` output
+- **IMPROVE:** Corrected and improved wording in setup wizard and doctor preflight
 
 **Bug fixes**:
 
