@@ -88,9 +88,25 @@ def test_report_markers_and_sections(monkeypatch):
         assert section in rendered
     assert "[PASS]" in rendered
     assert "All checks passed. You are good to go!" in rendered
-    assert "run only after separate approval" in rendered
     assert f"Guide: {monitor.DOCTOR_GUIDE_URL}" in rendered
     assert "ASCII_LOG_SEPARATORS resolves" not in rendered
+
+
+# Verifies the preflight notice reaches the user before any check runs rather than inside the report
+def test_preflight_notice_precedes_the_report(monkeypatch, capsys):
+    configure_valid_doctor(monkeypatch)
+    monkeypatch.setattr(monitor, "build_doctor_report", lambda *args, **kwargs: monitor.DoctorReport([monitor.make_doctor_check("Environment", "PASS", "ok")]))
+    monitor.run_doctor()
+    output = capsys.readouterr().out
+    assert "Running preflight checks. No files will be written. Interactive email and webhook tests run only after separate approval." in output
+    assert output.index("Running preflight checks.") < output.index("Doctor\n")
+
+
+# Verifies scrobble health mode names the one file Doctor may update
+def test_preflight_notice_names_the_scrobble_health_write(monkeypatch, capsys):
+    monkeypatch.setattr(monitor, "MONITOR_MODE", "scrobble_health")
+    monitor.render_doctor_notice()
+    assert "A rotated Spotify recent-play refresh token may be updated in the selected dotenv file." in capsys.readouterr().out
 
 
 # Verifies Doctor visually attaches explanatory details to their check rows
