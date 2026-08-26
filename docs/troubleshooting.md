@@ -70,6 +70,17 @@ Inside Docker or Docker Compose, the suggested fix shows the read-only Firefox h
 
 For advanced client-mode failures, repeat the [Spotify Desktop Client](configuration.md#spotify-desktop-client) export steps. Add `--debug` to Doctor or a normal run for sanitized technical detail. Use `--verbose` for a complete startup summary plus occasional state changes without output for every poll. Cookies, tokens, authorization headers, email passwords and webhook URLs remain hidden.
 
+<a id="terminal-colours-look-wrong"></a>
+## Terminal Colours Look Wrong
+
+If escape sequences such as `[36m` appear as literal text, the terminal does not understand ANSI colour. Start the tool with `--no-color`, or set `COLORED_OUTPUT = False` in the configuration file. On Windows, `pip install colorama` fixes the classic Command Prompt.
+
+If colour is missing where you expect it, check in this order: `--no-color` on the command line, `COLORED_OUTPUT` in the configuration file, a `NO_COLOR` environment variable, and whether output is redirected or piped. Colour is switched off in all of those cases, and also when `TERM` is unset or set to `dumb`.
+
+Log files never contain colour by design. To colour a saved log while reading it, see [Coloring Log Output with GRC](usage.md#coloring-log-output-with-grc).
+
+To change which colours are used, see [Terminal Colours](configuration.md#terminal-colours).
+
 <a id="choosing-the-right-logging-level"></a>
 ## Choosing the Right Logging Level
 
