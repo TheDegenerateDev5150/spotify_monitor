@@ -982,7 +982,7 @@ DOCTOR_GUIDE_URL = DOCUMENTATION_URL + "/troubleshooting/#doctor-preflight"
 
 # Labels of the two Doctor checks that gate the optional delivery tests, matched by prefix so each can name its channel
 SMTP_READY_CHECK_LABEL = "SMTP connection and login succeeded"
-WEBHOOK_READY_CHECK_LABEL = "Webhook URL and alert choices look valid"
+WEBHOOK_READY_CHECK_LABEL = "Webhook URL, headers and alert choices look valid"
 OAUTH_GUIDE_URL = DOCUMENTATION_URL + "/configuration/#spotify-oauth-app"
 SCROBBLE_AUTH_GUIDE_URL = DOCUMENTATION_URL + "/configuration/#spotify-recent-play-authorization"
 SPOTIFY_WEB_LOGIN_URL = "https://open.spotify.com/"
