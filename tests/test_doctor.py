@@ -182,7 +182,7 @@ def test_any_failure_returns_nonzero(monkeypatch):
 
 # Verifies interactive doctor delivery tests require separate default-no approvals
 def test_doctor_delivery_tests_can_be_declined_independently(monkeypatch):
-    report = monitor.DoctorReport([monitor.make_doctor_check("Notifications", "PASS", "SMTP connection and login succeeded"), monitor.make_doctor_check("Notifications", "PASS", "Webhook URL and alert choices look valid")])
+    report = monitor.DoctorReport([monitor.make_doctor_check("Notifications", "PASS", monitor.SMTP_READY_CHECK_LABEL), monitor.make_doctor_check("Notifications", "PASS", monitor.WEBHOOK_READY_CHECK_LABEL)])
     consent = Mock(side_effect=[False, False])
     email = Mock(side_effect=AssertionError("email sent without approval"))
     webhook = Mock(side_effect=AssertionError("webhook sent without approval"))
@@ -211,7 +211,7 @@ def test_doctor_delivery_consent_defaults_to_no(monkeypatch):
 
 # Verifies separately approved doctor tests deliver one email and one webhook
 def test_doctor_delivery_tests_send_approved_messages(monkeypatch):
-    report = monitor.DoctorReport([monitor.make_doctor_check("Notifications", "PASS", "SMTP connection and login succeeded"), monitor.make_doctor_check("Notifications", "PASS", "Webhook URL and alert choices look valid")])
+    report = monitor.DoctorReport([monitor.make_doctor_check("Notifications", "PASS", monitor.SMTP_READY_CHECK_LABEL), monitor.make_doctor_check("Notifications", "PASS", monitor.WEBHOOK_READY_CHECK_LABEL)])
     consent = Mock(side_effect=[True, True])
     email = Mock(return_value=0)
     webhook = Mock(return_value=0)
@@ -248,7 +248,7 @@ def test_delivery_gate_matches_the_provider_named_label(monkeypatch):
 
 # Verifies noninteractive doctor runs never offer or send delivery tests
 def test_noninteractive_doctor_never_offers_delivery_tests(monkeypatch):
-    report = monitor.DoctorReport([monitor.make_doctor_check("Notifications", "PASS", "SMTP connection and login succeeded"), monitor.make_doctor_check("Notifications", "PASS", "Webhook URL and alert choices look valid")])
+    report = monitor.DoctorReport([monitor.make_doctor_check("Notifications", "PASS", monitor.SMTP_READY_CHECK_LABEL), monitor.make_doctor_check("Notifications", "PASS", monitor.WEBHOOK_READY_CHECK_LABEL)])
     monkeypatch.setattr(monitor.sys, "stdin", Mock(isatty=lambda: True))
     monkeypatch.setattr(monitor.sys, "stdout", Mock(isatty=lambda: False))
     monkeypatch.setattr(monitor, "_doctor_ask_yes_no", Mock(side_effect=AssertionError("consent prompt attempted")))
