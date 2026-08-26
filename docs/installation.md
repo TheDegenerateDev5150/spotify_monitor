@@ -18,6 +18,7 @@ Choose either the Python path or the container path.
 - [spotipy](https://github.com/spotipy-dev/spotipy) is optional and is needed only for legacy OAuth metadata access
 - [pycookiecheat](https://github.com/n8henrie/pycookiecheat) is optional and is needed only to import cookies from Chrome, Brave or Chromium
 - [Pillow](https://github.com/python-pillow/Pillow) is optional and is needed only to attach playlist and album artwork to ntfy alerts
+- [colorama](https://github.com/tartley/colorama) is optional and improves coloured output in the classic Windows Command Prompt
 
 **Container path** (Python is included in the image):
 
@@ -259,6 +260,12 @@ On Python 3.9 install the last release that supports it instead:
 
 ```sh
 pip install "Pillow>=11.3.0,<12"
+```
+
+On the classic Windows Command Prompt, install `colorama` for better coloured output:
+
+```sh
+pip install colorama
 ```
 
 Verify the script:
