@@ -128,7 +128,7 @@ def test_doctor_interactive_progress(monkeypatch):
         kwargs["progress"]("notifications")
         return monitor.DoctorReport([monitor.make_doctor_check("Notifications", "PASS", "ok")])
 
-    monkeypatch.setattr(monitor.sys, "stdout", stream)
+    monkeypatch.setattr(monitor.sys, "stdout", monitor.TerminalStream(stream))
     monkeypatch.setattr(monitor, "build_doctor_report", build_report)
     assert monitor.run_doctor() == 0
     output = stream.getvalue()
@@ -140,7 +140,7 @@ def test_doctor_interactive_progress(monkeypatch):
 # Verifies doctor progress stops at the visible message instead of padding to a fixed terminal column
 def test_doctor_progress_uses_visible_message_width(monkeypatch):
     stream = TTYBuffer()
-    monkeypatch.setattr(monitor.sys, "stdout", stream)
+    monkeypatch.setattr(monitor.sys, "stdout", monitor.TerminalStream(stream))
     monitor._doctor_progress("authentication")
     line = "* Checking authentication ..."
     assert stream.getvalue() == "\r" + line
