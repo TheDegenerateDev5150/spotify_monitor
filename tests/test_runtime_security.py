@@ -16,6 +16,12 @@ HTTP_METHODS = {"get", "post", "put", "patch", "delete", "head", "options", "req
 HOSTILE_NAME = "Friend\x1b[2J\x1b[8mhidden\rOVERWRITTEN\x07\x9bA\ttab"
 
 
+# Asserts no cursor, screen or title control sequence survived, allowing only the inert SGR colour codes this tool emits
+def assert_no_terminal_controls(output: str) -> None:
+    assert "\r" not in output and "\x07" not in output and "\x9b" not in output
+    assert monitor.SGR_SEQUENCE_RE.sub("", output).count("\x1b") == 0
+
+
 # Collects every outgoing HTTP call in the module together with the verify argument it passes
 def http_calls_with_verification():
     tree = ast.parse((PROJECT_ROOT / "spotify_monitor.py").read_text(encoding="utf-8"))
@@ -51,7 +57,7 @@ def test_output_streams_sanitize_terminal_controls():
 
     for output in (terminal.getvalue(), logger_terminal.getvalue(), logger_log.getvalue()):
         assert "OVERWRITTEN" in output
-        assert "\x1b" not in output and "\r" not in output and "\x07" not in output and "\x9b" not in output
+        assert_no_terminal_controls(output)
 
 
 # Confirms the early-exit friend listing is sanitized before logging policy is resolved
@@ -72,7 +78,7 @@ def test_list_friends_cli_sanitizes_before_exit(monkeypatch, capsys):
     output = capsys.readouterr().out
     assert error.value.code == 0
     assert "OVERWRITTEN" in output
-    assert "\x1b" not in output and "\r" not in output and "\x07" not in output and "\x9b" not in output
+    assert_no_terminal_controls(output)
 
 
 # Verifies a nested request alarm restores the earlier loop-wide deadline
