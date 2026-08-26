@@ -4,10 +4,11 @@ This is a high-level summary of the most important changes.
 
 # Changes in 3.3 (26 Aug 2026)
 
-Version **3.3** fixes **false Last.fm outage alerts**, retries **failed alert delivery** and escapes a friend's display name in email notifications. **Pillow is now optional**, **config files are parsed instead of executed**, access tokens are reused until they expire and releases ship with a checksum file plus a signed build attestation.
+Version **3.3** adds **coloured terminal output** with a customizable theme, fixes **false Last.fm outage alerts**, retries **failed alert delivery** and escapes a friend's display name in email notifications. **Pillow is now optional**, **config files are parsed instead of executed**, access tokens are reused until they expire and releases ship with a checksum file plus a signed build attestation.
 
 **Features and improvements**:
 
+- **NEW:** **Coloured terminal output** - Live output is now coloured by default: usernames, track, playlist and album names, dates, durations, counters and links each get their own colour, while errors, warnings and received signals are highlighted as whole lines. Override any part through **`COLOR_THEME`**, which merges over the built-in theme, and turn colour off with **`--no-color`** or `COLORED_OUTPUT = False`. Colour switches itself off when output is redirected or piped, when `TERM` is unset or `dumb` and when `NO_COLOR` is set. **Log files stay plain text**, so `grep` and `tail` are unaffected, and the existing **grc** recipe still colours saved logs. Install the optional `colorama` package for the classic Windows Command Prompt
 - **CONFIG CHANGE:** **Artwork is now an optional extra** - **Pillow is no longer required**. Artwork moved to the `notification-images` extra and `NTFY_IMAGES` now defaults to `False`. Install with `pip install "spotify_monitor[notification-images]"` or let setup do it for you. **Upgraders who want cover art back should install the extra and set `NTFY_IMAGES = True`**
 - **IMPROVE:** **Fewer Friend Activity requests** - Cached access tokens are now reused until they expire, roughly halving the number of requests
 - **IMPROVE:** **Refreshed, automatically published Docker images** - Both images now run Python 3.13 on Debian 13 with a digest-pinned, patched base and no `pip` in the runtime, so a fresh pull carries no known fixable high/critical vulnerabilities. The secret grabber image is now built, versioned and published automatically, runs as a non-root user and is rebuilt weekly for security updates
@@ -27,7 +28,7 @@ Version **3.3** fixes **false Last.fm outage alerts**, retries **failed alert de
 - **BUGFIX:** **Reliable Spotify links** - Links built from a Spotify URI are now parsed exactly instead of guessed
 - **BUGFIX:** **Accurate dotenv and activity-file state** - `SIGHUP` now clears removed secrets and resets caches while activity flag files are written atomically
 - **BUGFIX:** **Hardened email notifications** - A friend's display name is now escaped in emails, so it can no longer inject markup, a live link or a tracking image
-- **BUGFIX:** **Terminal-safe Spotify text** - Spotify-supplied friend, artist, track, album and context names are stripped of terminal control sequences before reaching the console or log file, including `--list-friends` and normal monitoring output
+- **BUGFIX:** **Terminal-safe Spotify text** - Spotify-supplied friend, artist, track, album and context names are stripped of terminal control sequences before reaching the console or log file, including `--list-friends` and normal monitoring output. Colour codes are the one exception, since they can only change how text looks, and they are still removed from everything written to a log file
 - **BUGFIX:** **Webhook delivery respects `VERIFY_SSL`** - Discord and ntfy now honor the same TLS setting as other requests and follow no redirects, so alert content and headers cannot reach an unconfigured host
 - **BUGFIX:** **Configuration files are read as data** - The config file is now parsed instead of executed, so it can no longer run code at startup. Settings dropped by older upgrades are ignored gracefully and config backups keep owner-only permissions
 - **BUGFIX:** **Connectivity check respects configuration** - The startup internet check now honors `CHECK_INTERNET_URL`, `CHECK_INTERNET_TIMEOUT` and `VERIFY_SSL`
