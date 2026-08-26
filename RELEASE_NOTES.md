@@ -26,6 +26,7 @@ Version **3.3** fixes **false Last.fm outage alerts**, retries **failed alert de
 - **BUGFIX:** **Reliable Spotify links** - Links built from a Spotify URI are now parsed exactly instead of guessed
 - **BUGFIX:** **Accurate dotenv and activity-file state** - `SIGHUP` now clears removed secrets and resets caches while activity flag files are written atomically
 - **BUGFIX:** **Hardened email notifications** - A friend's display name is now escaped in emails, so it can no longer inject markup, a live link or a tracking image
+- **BUGFIX:** **Terminal-safe Spotify text** - Spotify-supplied friend, artist, track, album and context names are stripped of terminal control sequences before reaching the console or log file, including `--list-friends` and normal monitoring output
 - **BUGFIX:** **Webhook delivery respects `VERIFY_SSL`** - Discord and ntfy now honor the same TLS setting as other requests and follow no redirects, so alert content and headers cannot reach an unconfigured host
 - **BUGFIX:** **Configuration files are read as data** - The config file is now parsed instead of executed, so it can no longer run code at startup. Settings dropped by older upgrades are ignored gracefully and config backups keep owner-only permissions
 - **BUGFIX:** **Connectivity check respects configuration** - The startup internet check now honors `CHECK_INTERNET_URL`, `CHECK_INTERNET_TIMEOUT` and `VERIFY_SSL`
