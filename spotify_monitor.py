@@ -6953,10 +6953,6 @@ def _doctor_offer_notification_tests(report: DoctorReport) -> List[DoctorCheck]:
             print(f"[{check.status}] {check.label}")
         else:
             print("[SKIP] Test webhook was not sent")
-    if results:
-        failures = sum(check.status == "FAIL" for check in results)
-        print(f"\nDelivery test summary: {failures} failure(s)")
-    print()
     return results
 
 
@@ -6992,7 +6988,7 @@ def build_doctor_report(target_value=None, config_path=None, env_path=None, star
 # Renders one sectioned ASCII doctor report with action lines for failures
 def render_doctor_report(report: DoctorReport) -> str:
     write_notice = "A rotated Spotify recent-play refresh token may be updated in the selected dotenv file." if MONITOR_MODE == "scrobble_health" else "No files will be written."
-    lines = ["Doctor", "", f"{write_notice} In an interactive terminal, real email and webhook tests are offered separately and run only after approval."]
+    lines = ["Doctor", "", f"Running preflight checks. {write_notice} Interactive email and webhook tests run only after separate approval."]
     sections = ("Environment", "Configuration", "Authentication", "Metadata", "Connectivity", "Target", "Scrobble health", "Notifications")
     for section in sections:
         section_checks = [item for item in report.checks if item.section == section]
@@ -7010,7 +7006,13 @@ def render_doctor_report(report: DoctorReport) -> str:
                 lines.append(f"To fix: {rendered_advice.fix}")
     failures = sum(check.status == "FAIL" for check in report.checks)
     warnings = sum(check.status == "WARN" for check in report.checks)
-    lines.extend(("", "Summary", f"{failures} failure(s), {warnings} warning(s)", "", f"Guide: {DOCTOR_GUIDE_URL}"))
+    if failures:
+        summary_line = f"  {failures} check(s) failed, {warnings} warning(s). Fix the failures above before relying on the tool."
+    elif warnings:
+        summary_line = f"  All critical checks passed with {warnings} warning(s). Review the warnings above."
+    else:
+        summary_line = "  All checks passed. You are good to go!"
+    lines.extend(("", "Summary", summary_line, "", f"Guide: {DOCTOR_GUIDE_URL}"))
     return sanitize_error_text("\n".join(lines))
 
 
@@ -7461,7 +7463,7 @@ def _wizard_install_notification_images_dependency(method: str) -> bool:
 
 # Explains how setup displays and accepts recommended prompt defaults
 def _wizard_print_default_guidance() -> None:
-    print("\nPress Enter to accept the shown default. Ctrl+C cancels.\n")
+    print("Press Enter to accept the shown default. Ctrl+C cancels.\n")
 
 
 # Prints the installation method and output files shared by both setup wizards
@@ -8445,6 +8447,7 @@ def _wizard_welcome() -> None:
     print(f"Full options: {prefix} --help")
     print(f"\nGuide:        {QUICK_START_GUIDE_URL}\n")
     if interactive and _wizard_ask_yes_no("Run the guided setup wizard now?", default=True):
+        print()
         run_setup_wizard()
 
 
@@ -8461,7 +8464,7 @@ def run_setup_wizard(initial_target: Optional[str] = None, config_file=None, env
     except ValueError as exc:
         print(f"Setup cannot start: {exc}")
         raise SystemExit(1) from None
-    print("\nSetup Wizard\n")
+    print("Setup Wizard\n")
     print("This asks a few questions and writes a ready-to-run configuration.")
     _wizard_print_default_guidance()
     print("Secrets go to the dotenv file. Non-secret settings go to the config file.")
@@ -8525,7 +8528,8 @@ def run_setup_wizard(initial_target: Optional[str] = None, config_file=None, env
             print("Follow status could not be checked because the saved setup could not be loaded.")
     doctor_failed = False
     doctor_ran = False
-    print()
+    if auth["complete"]:
+        print()
     if auth["complete"] and _wizard_ask_yes_no("Run doctor now? It writes no files and offers real delivery tests only with separate approval.", default=True):
         doctor_ran = True
         if _wizard_load_effective_setup(config_path, env_path):
@@ -8608,7 +8612,7 @@ def run_scrobble_health_setup_wizard(config_file=None, env_file=None) -> None:
     except ValueError as exc:
         print(f"Setup cannot start: {exc}")
         raise SystemExit(1) from None
-    print("\nSpotify-to-Last.fm Scrobble Health Setup\n")
+    print("Spotify-to-Last.fm Scrobble Health Setup\n")
     print("This mode compares completed plays from your Spotify account with your public Last.fm recent tracks.")
     _wizard_print_default_guidance()
     print("Five consecutive missing plays and a 20 minute dead period are the default alert threshold.")
