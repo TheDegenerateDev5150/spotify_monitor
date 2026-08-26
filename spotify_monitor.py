@@ -3075,6 +3075,12 @@ def normalized_webhook_provider(provider: Any = None) -> str:
     return normalized if normalized in ("discord", "ntfy") else ""
 
 
+# Returns the webhook provider name spelled the way its service brands it, for user-facing text
+def webhook_provider_display_name(provider: Any = None) -> str:
+    normalized = normalized_webhook_provider(provider)
+    return {"discord": "Discord", "ntfy": "ntfy"}.get(normalized, normalized)
+
+
 # Detects Discord and public ntfy webhook providers from distinctive URL shapes
 def detect_webhook_provider(url: Any) -> str:
     if not validate_webhook_url(url):
@@ -3844,7 +3850,7 @@ def reload_secrets_signal_handler(sig, frame):
         detected_provider = detect_webhook_provider(WEBHOOK_URL)
         if detected_provider and detected_provider != normalized_webhook_provider():
             WEBHOOK_PROVIDER = detected_provider
-            print(f"* Updated webhook provider to {detected_provider}{suffix}")
+            print(f"* Updated webhook provider to {webhook_provider_display_name(detected_provider)}{suffix}")
 
     print_cur_ts("Timestamp:\t\t\t")
 
@@ -6945,7 +6951,7 @@ def _doctor_offer_notification_tests(report: DoctorReport) -> List[DoctorCheck]:
         else:
             print("[SKIP] Test email was not sent")
     if webhook_ready:
-        provider = normalized_webhook_provider()
+        provider = webhook_provider_display_name()
         if _doctor_ask_yes_no(f"Send one test webhook through {provider} now? This will publish a real notification"):
             result = send_webhook("Spotify Monitor doctor test", "This test notification was sent after approval in --doctor. Your webhook delivery settings work.", "song", force=True)
             check = make_doctor_check("Notifications", "PASS" if result == 0 else "FAIL", "Doctor test webhook delivered" if result == 0 else "Doctor test webhook delivery failed", "One real test webhook was sent after confirmation" if result == 0 else "The approved test webhook could not be delivered")
@@ -9672,7 +9678,7 @@ def apply_webhook_cli_overrides(args: argparse.Namespace, parser: argparse.Argum
         configured_provider = normalized_webhook_provider()
         if detected_provider and detected_provider != configured_provider:
             WEBHOOK_PROVIDER = detected_provider
-            print(f"* Warning: Configured webhook provider did not match the URL. Using {detected_provider}.")
+            print(f"* Warning: Configured webhook provider did not match the URL. Using {webhook_provider_display_name(detected_provider)}.")
 
 
 # Resolves one monitoring mode from config plus an optional command-line selection
