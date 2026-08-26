@@ -6985,10 +6985,15 @@ def build_doctor_report(target_value=None, config_path=None, env_path=None, star
     return report
 
 
+# Prints what Doctor will and will not do, before the checks start
+def render_doctor_notice() -> None:
+    write_notice = "A rotated Spotify recent-play refresh token may be updated in the selected dotenv file." if MONITOR_MODE == "scrobble_health" else "No files will be written."
+    print(f"Running preflight checks. {write_notice} Interactive email and webhook tests run only after separate approval.\n")
+
+
 # Renders one sectioned ASCII doctor report with action lines for failures
 def render_doctor_report(report: DoctorReport) -> str:
-    write_notice = "A rotated Spotify recent-play refresh token may be updated in the selected dotenv file." if MONITOR_MODE == "scrobble_health" else "No files will be written."
-    lines = ["Doctor", "", f"Running preflight checks. {write_notice} Interactive email and webhook tests run only after separate approval."]
+    lines = ["Doctor"]
     sections = ("Environment", "Configuration", "Authentication", "Metadata", "Connectivity", "Target", "Scrobble health", "Notifications")
     for section in sections:
         section_checks = [item for item in report.checks if item.section == section]
@@ -7050,6 +7055,7 @@ def _doctor_progress_clear() -> None:
 # Runs doctor preflight plus approved delivery tests and returns zero unless one check fails
 def run_doctor(target_value=None, config_path=None, env_path=None, startup_checks: Sequence[DoctorCheck] = ()) -> int:
     progress = _doctor_progress if sys.stdout.isatty() else None
+    render_doctor_notice()
     try:
         report = build_doctor_report(target_value, config_path, env_path, startup_checks, progress=progress)
     finally:
@@ -7067,6 +7073,7 @@ def run_scrobble_health_doctor(username: str, config_path=None, env_path=None, s
     evaluation: Optional[ScrobbleHealthEvaluation] = None
     spotify_recent_access_ok = False
     progress = _doctor_progress if sys.stdout.isatty() else None
+    render_doctor_notice()
     try:
         if progress is not None:
             progress("environment")
@@ -8533,6 +8540,7 @@ def run_setup_wizard(initial_target: Optional[str] = None, config_file=None, env
     if auth["complete"] and _wizard_ask_yes_no("Run doctor now? It writes no files and offers real delivery tests only with separate approval.", default=True):
         doctor_ran = True
         if _wizard_load_effective_setup(config_path, env_path):
+            render_doctor_notice()
             try:
                 report = build_doctor_report(target, str(config_path), str(env_path), progress=_doctor_progress)
             finally:
