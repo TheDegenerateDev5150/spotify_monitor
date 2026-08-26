@@ -45,7 +45,7 @@ same absent-dependency behavior a user would see.
 | `test_webhook_notifications.py` | Webhook URL validation, provider detection, ntfy normalization and `SIGHUP` reload |
 | `test_notification_escaping.py` | Source-level sweep proving every HTML email body and attribute escapes Spotify-supplied text |
 | `test_local_transports.py` | Real loopback HTTP and SMTP delivery, marked `integration` |
-| `test_runtime_security.py` | Request deadlines and watchdog nesting, playback argument lists and cookie polling |
+| `test_runtime_security.py` | Request deadlines and watchdog nesting, playback argument lists, cookie polling and terminal-safe Spotify output |
 | `test_recovery_errors.py` | Error classification and install-method-aware recovery advice |
 | `test_doctor.py` | `--doctor` report structure, sections, detail indentation and exit status |
 | `test_startup_ui.py` | Startup banner rendering, alignment and machine-friendly `--version` and `--generate-config` output |
