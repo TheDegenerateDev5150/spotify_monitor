@@ -556,7 +556,8 @@ Parts with the same name mean the same thing in [spotify_profile_monitor](https:
 
 | Theme key | Colours |
 | --- | --- |
-| `header` | The startup banner |
+| `header` | The startup banner plus the Setup Wizard and Doctor headings |
+| `section` | Commands the wizard tells you to run, and the Doctor section names |
 | `username` | Spotify display names |
 | `user_uri_id` | Spotify user IDs and URIs |
 | `status_active` | `ACTIVE`, `PRIVATE MODE`, `RESUMED` and `LOOP` |
