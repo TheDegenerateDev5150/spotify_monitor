@@ -2,6 +2,7 @@
 
 import ast
 import time
+from io import StringIO
 from pathlib import Path
 from unittest.mock import Mock, call
 
@@ -12,6 +13,7 @@ import spotify_monitor as monitor
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 HTTP_METHODS = {"get", "post", "put", "patch", "delete", "head", "options", "request"}
+HOSTILE_NAME = "Friend\x1b[2J\x1b[8mhidden\rOVERWRITTEN\x07\x9bA\ttab"
 
 
 # Collects every outgoing HTTP call in the module together with the verify argument it passes
@@ -27,6 +29,50 @@ def http_calls_with_verification():
             continue
         verify = keywords.get("verify")
         yield node.lineno, ast.unparse(node.func.value), None if verify is None else ast.unparse(verify)
+
+
+@pytest.mark.parametrize("control", ["\x1b", "\r", "\x07", "\x00", "\x08", "\x0b", "\x0c", "\x7f", "\x9b"])
+# Confirms every terminal control character is removed from Spotify-supplied text
+def test_sanitize_terminal_text_strips_control_characters(control):
+    assert control not in monitor.sanitize_terminal_text(f"name{control}payload")
+
+
+# Confirms the terminal and logger stream boundaries sanitize untrusted text
+def test_output_streams_sanitize_terminal_controls():
+    terminal = StringIO()
+    stream = monitor.TerminalStream(terminal)
+    stream.write(HOSTILE_NAME + "\n")
+    logger_terminal = StringIO()
+    logger_log = StringIO()
+    logger = monitor.Logger.__new__(monitor.Logger)
+    logger.__dict__["terminal"] = logger_terminal
+    logger.__dict__["logfile"] = logger_log
+    logger.write(HOSTILE_NAME + "\n")
+
+    for output in (terminal.getvalue(), logger_terminal.getvalue(), logger_log.getvalue()):
+        assert "OVERWRITTEN" in output
+        assert "\x1b" not in output and "\r" not in output and "\x07" not in output and "\x9b" not in output
+
+
+# Confirms the early-exit friend listing is sanitized before logging policy is resolved
+def test_list_friends_cli_sanitizes_before_exit(monkeypatch, capsys):
+    monkeypatch.setattr(monitor.sys, "argv", ["spotify_monitor", "--list-friends", "--spotify-dc-cookie", "test-cookie", "--env-file", "none"])
+    monkeypatch.setattr(monitor, "CLEAR_SCREEN", False)
+    monkeypatch.setattr(monitor, "TOKEN_SOURCE", "cookie")
+    monkeypatch.setattr(monitor, "USER_AGENT", "test-agent")
+    monkeypatch.setattr(monitor, "find_config_file", lambda path=None: None)
+    monkeypatch.setattr(monitor, "check_internet", lambda: True)
+    monkeypatch.setattr(monitor, "spotify_get_access_token_from_sp_dc", lambda cookie: "test-token")
+    monkeypatch.setattr(monitor, "spotify_get_friends_json", lambda token: {"friends": []})
+    monkeypatch.setattr(monitor, "spotify_list_friends", lambda friends, token: print(HOSTILE_NAME))
+
+    with pytest.raises(SystemExit) as error:
+        monitor.main()
+
+    output = capsys.readouterr().out
+    assert error.value.code == 0
+    assert "OVERWRITTEN" in output
+    assert "\x1b" not in output and "\r" not in output and "\x07" not in output and "\x9b" not in output
 
 
 # Verifies a nested request alarm restores the earlier loop-wide deadline
