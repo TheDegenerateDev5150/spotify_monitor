@@ -229,6 +229,23 @@ def test_doctor_delivery_tests_send_approved_messages(monkeypatch):
     assert "[PASS] Doctor test webhook delivered" in stream.getvalue()
 
 
+# Verifies the delivery-test gate still recognizes the readiness check once its label names the provider
+def test_delivery_gate_matches_the_provider_named_label(monkeypatch):
+    monkeypatch.setattr(monitor, "WEBHOOK_PROVIDER", "discord")
+    label = f"{monitor.WEBHOOK_READY_CHECK_LABEL} for {monitor.webhook_provider_display_name()}"
+    assert label.endswith("for Discord")
+    report = monitor.DoctorReport([monitor.make_doctor_check("Notifications", "PASS", label)])
+    consent = Mock(return_value=False)
+    monkeypatch.setattr(monitor.sys, "stdin", Mock(isatty=lambda: True))
+    monkeypatch.setattr(monitor.sys, "stdout", Mock(isatty=lambda: True, write=lambda *args: None, flush=lambda: None))
+    monkeypatch.setattr(monitor, "_doctor_ask_yes_no", consent)
+
+    monitor._doctor_offer_notification_tests(report)
+
+    assert consent.call_count == 1
+    assert "Send one test webhook through Discord now?" in consent.call_args[0][0]
+
+
 # Verifies noninteractive doctor runs never offer or send delivery tests
 def test_noninteractive_doctor_never_offers_delivery_tests(monkeypatch):
     report = monitor.DoctorReport([monitor.make_doctor_check("Notifications", "PASS", "SMTP connection and login succeeded"), monitor.make_doctor_check("Notifications", "PASS", "Webhook URL and alert choices look valid")])
