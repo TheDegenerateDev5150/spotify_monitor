@@ -21,7 +21,6 @@ pycookiecheat (optional, used for Chrome, Brave and Chromium cookie import)
 
 VERSION = "3.3"
 
-
 # ---------------------------
 # CONFIGURATION SECTION START
 # ---------------------------
