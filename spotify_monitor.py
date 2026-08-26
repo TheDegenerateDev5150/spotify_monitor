@@ -2619,6 +2619,17 @@ def normalize_log_separators(message):
     return re.sub(r"(?m)^─+$", lambda match: match.group(0).replace("─", "-"), message)
 
 
+# Every control character is dropped while tab and newline remain available for output layout
+TERMINAL_CONTROL_RE = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
+
+
+# Removes terminal control sequences from untrusted text before it reaches output streams
+def sanitize_terminal_text(message):
+    if not isinstance(message, str) or not message:
+        return message
+    return TERMINAL_CONTROL_RE.sub("", message)
+
+
 # Logger class to output messages to stdout and log file
 class Logger(object):
     def __init__(self, filename):
@@ -2626,6 +2637,7 @@ class Logger(object):
         self.logfile = open(filename, "a", buffering=1, encoding="utf-8")
 
     def write(self, message):
+        message = sanitize_terminal_text(message)
         # Expand tabs for file output (stdout remains untouched)
         self.logfile.write(normalize_log_separators(message.expandtabs(8)))
         if (TRUNCATE_CHARS):
@@ -2635,18 +2647,47 @@ class Logger(object):
         self.logfile.flush()
 
     def terminal_only(self, message):
+        message = sanitize_terminal_text(message)
         if TRUNCATE_CHARS:
             message = truncate_string_per_line(message, TRUNCATE_CHARS)
         self.terminal.write(message)
         self.terminal.flush()
 
     def log_only(self, message):
-        self.logfile.write(normalize_log_separators(message.expandtabs(8)))
+        self.logfile.write(normalize_log_separators(sanitize_terminal_text(message).expandtabs(8)))
         self.logfile.flush()
 
     def flush(self):
         self.terminal.flush()
         self.logfile.flush()
+
+
+# Sanitizing stdout wrapper used before logging policy and one-shot mode resolution
+class TerminalStream(object):
+    # Stores the wrapped terminal stream
+    def __init__(self, stream):
+        self.terminal = stream
+
+    # Writes one sanitized message to the wrapped terminal
+    def write(self, message):
+        self.terminal.write(sanitize_terminal_text(message))
+        self.terminal.flush()
+
+    # Writes one message to the terminal while matching the Logger interface
+    def terminal_only(self, message):
+        self.write(message)
+
+    # Discards log-only output while file logging is disabled
+    def log_only(self, message):
+        return
+
+    # Flushes the wrapped terminal
+    def flush(self):
+        self.terminal.flush()
+
+    # Forwards remaining stream attributes to the wrapped terminal
+    def __getattr__(self, name):
+        return getattr(self.terminal, name)
 
 
 # Atomically creates the configured activity flag or disables the integration after a visible failure
@@ -9653,6 +9694,8 @@ def main():
         sys.exit(0)
 
     stdout_bck = sys.stdout
+    if not isinstance(sys.stdout, TerminalStream):
+        sys.stdout = TerminalStream(sys.stdout)
 
     keep_cli_history = any(flag in sys.argv for flag in ("--import-browser-cookie", "--set-sp-dc", "--set-lastfm-credentials", "--authorize-scrobble-health", "--doctor"))
     clear_screen(CLEAR_SCREEN and sys.stdout.isatty() and not keep_cli_history)
