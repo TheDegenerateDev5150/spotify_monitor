@@ -4,7 +4,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import Mock, call
 
 import dotenv
 import pytest
@@ -349,7 +349,8 @@ def test_scrobble_health_cli_selects_isolated_default_files(monkeypatch):
     with pytest.raises(SystemExit) as error:
         monitor.main()
     assert error.value.code == 0
-    scrobble_config_finder.assert_called_once_with(None)
+    # The early terminal-appearance peek and the full load both use the scrobble health config file
+    assert scrobble_config_finder.call_args_list == [call(None), call(None)]
     friend_config_finder.assert_not_called()
     dotenv_finder.assert_called_once_with(filename=monitor.SCROBBLE_HEALTH_DOTENV_FILENAME)
     doctor_mock.assert_called_once()
