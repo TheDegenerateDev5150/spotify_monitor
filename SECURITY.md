@@ -20,6 +20,7 @@ This tool holds credentials for your own Spotify account and records what your f
 
 - **Configuration files are parsed, not executed.** Only documented `SETTING = value` lines with plain literal values are accepted. Imports, function calls, expressions and control flow are rejected without being run, so a configuration file found in the working directory cannot execute code.
 - **Secrets belong in `.env`, not in the configuration file.** `--set-sp-dc`, `--set-webhook-url`, `--set-lastfm-credentials` and the setup wizard write to `.env` and set owner-only permissions on POSIX systems. Generated configuration backups keep the owner-only mode of the file they replace. See [Configuration](https://misiektoja.github.io/spotify_monitor/configuration/).
+- **Spotify-supplied text is untrusted input.** Friend, artist, track, album and context names are stripped of terminal control sequences before they reach console or log output, so a crafted name cannot drive the terminal.
 - **Local playback never builds a shell command.** Track IDs are validated against ASCII letters and digits before macOS, Linux or Windows playback, and every integration passes an argument list rather than a shell string.
 - **The debug utilities send tokens only to Spotify.** `spotify_monitor_totp_test --token-validity-url` accepts HTTPS Spotify API hosts only and follows no redirects, so a copied command cannot forward your bearer token elsewhere.
 - **Monitoring an account is subject to the law where you are.** The tool is intended for accounts you own or are authorized to observe.
