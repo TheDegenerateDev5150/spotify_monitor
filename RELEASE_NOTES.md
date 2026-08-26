@@ -4,33 +4,34 @@ This is a high-level summary of the most important changes.
 
 # Changes in 3.3 (26 Aug 2026)
 
-Version **3.3** focuses on trustworthy alerts, a leaner install and safer configuration. A friend's display name can no longer inject content into emails, delivery failures are retried instead of lost, false Last.fm outage alerts are gone and configuration files can no longer run code. Pillow became optional, access tokens are now reused until they expire and releases can be verified before you unpack them.
+Version **3.3** fixes **false Last.fm outage alerts**, retries **failed alert delivery** and escapes a friend's display name in email notifications. **Pillow is now optional**, **config files are parsed instead of executed**, access tokens are reused until they expire and releases ship with a checksum file plus a signed build attestation.
 
 **Features and improvements**:
 
-- **IMPROVE:** **Refreshed Docker images** - Both images now run Python 3.13 on Debian 13 with a digest-pinned, patched base and no `pip` in the runtime, so a fresh pull carries no known fixable high/critical vulnerabilities
-- **IMPROVE:** **Automatically published secret grabber image** - The debug image is now built, versioned and published automatically, and rebuilt weekly for security updates
-- **IMPROVE:** **Continuous security scanning** - Dependencies, images and source are scanned on every change and weekly, with a published SBOM and a public OpenSSF Scorecard rating
+- **CONFIG CHANGE:** **Artwork is now an optional extra** - **Pillow is no longer required**. Artwork moved to the `notification-images` extra and `NTFY_IMAGES` now defaults to `False`. Install with `pip install "spotify_monitor[notification-images]"` or let setup do it for you. **Upgraders who want cover art back should install the extra and set `NTFY_IMAGES = True`**
+- **IMPROVE:** **Fewer Friend Activity requests** - Cached access tokens are now reused until they expire, roughly halving the number of requests
+- **IMPROVE:** **Refreshed, automatically published Docker images** - Both images now run Python 3.13 on Debian 13 with a digest-pinned, patched base and no `pip` in the runtime, so a fresh pull carries no known fixable high/critical vulnerabilities. The secret grabber image is now built, versioned and published automatically, runs as a non-root user and is rebuilt weekly for security updates
 - **IMPROVE:** **Clearer ntfy webhook customization** - `WEBHOOK_TEMPLATE`, `WEBHOOK_USERNAME` and `WEBHOOK_AVATAR_URL` are documented as Discord-only; customize ntfy delivery through `WEBHOOK_HEADERS`
-- **IMPROVE:** **Leaner install with optional ntfy artwork** - **Pillow is no longer required**; ntfy artwork moved to the `notification-images` extra and `NTFY_IMAGES` now defaults to `False`. Install with `pip install "spotify_monitor[notification-images]"` or let setup do it for you. **Upgraders who want cover art back should set `NTFY_IMAGES = True`**
-- **IMPROVE:** **Verifiable release downloads** - Releases now ship a `SHA256SUMS.txt` and a signed build attestation, checkable with `gh attestation verify`
-- **IMPROVE:** **Guarded, reproducible releases** - PyPI and Docker Hub releases can no longer publish unless the full test suite passes, and `--version` is checked against package metadata and these notes
-- **IMPROVE:** **Security policy and support guidance** - Added private vulnerability reporting, [SUPPORT.md](https://github.com/misiektoja/spotify_monitor/blob/main/SUPPORT.md), contribution guidance and issue templates that collect version, install method and `--doctor` output
+- **IMPROVE:** **Checksums and signed attestation for releases** - Releases now ship a `SHA256SUMS.txt` and a signed build attestation, checkable with `gh attestation verify`
+- **IMPROVE:** **Releases publish only after the tests pass** - PyPI and Docker Hub releases can no longer publish unless the full test suite passes, every workflow action is pinned to a commit SHA, release tags reach the workflow through the environment instead of a shell command and `--version` is checked against package metadata and these notes
+- **IMPROVE:** **Automated checks on every change** - A pinned Ruff lint pass now runs in CI ahead of the test suite, which covers Python 3.9 through 3.14 plus a Windows job. Optional pre-commit hooks and a shared `.editorconfig` catch the same issues before you commit
+- **IMPROVE:** **Continuous security scanning** - Dependencies, images and source are scanned on every change and weekly, with a published SBOM, Dependabot coverage for Python dependencies and a public OpenSSF Scorecard rating
+- **IMPROVE:** **Security policy and support guidance** - Added private vulnerability reporting, [SUPPORT.md](https://github.com/misiektoja/spotify_monitor/blob/main/SUPPORT.md), contribution guidance, a code of conduct, a dependency licensing notice and issue templates that collect version, install method and `--doctor` output
 
 **Bug fixes**:
 
-- **BUGFIX:** **Webhook delivery respects `VERIFY_SSL`** - Discord and ntfy now honor the same TLS setting as other requests and no longer follow redirects
-- **BUGFIX:** **Hardened email notifications** - A friend's display name is now escaped in emails, so it can no longer inject markup, a live link or a tracking image
-- **BUGFIX:** **Declarative configuration and private backups** - Configuration files can no longer contain executable code; settings dropped by older upgrades are ignored gracefully and backups keep owner-only permissions
-- **BUGFIX:** **Connectivity check respects configuration** - The startup internet check now honors `CHECK_INTERNET_URL`, `CHECK_INTERNET_TIMEOUT` and `VERIFY_SSL`
-- **BUGFIX:** **Reliable Spotify links** - Links built from a Spotify URI are now parsed exactly instead of guessed
-- **BUGFIX:** **Clearer missing-play alerts** - Outage notifications now name the first missing play and correctly label the displayed tracks
-- **BUGFIX:** **Delivery-aware monitoring alerts** - Failed Friend Activity and scrobble-health alerts remain pending until every enabled email and webhook channel succeeds. Successful channels are not sent again while another channel retries
 - **BUGFIX:** **No more false Last.fm outages** - Repeated plays are now matched pairwise instead of greedily
-- **BUGFIX:** **Accurate dotenv and activity-file state** - `SIGHUP` now clears removed secrets and resets caches, and activity flag files are written atomically
-- **BUGFIX:** **Safe local playback and durable deadlines** - Track IDs are validated before playback, and the anti-hang watchdog can no longer be disabled by a nested request
-- **BUGFIX:** **Lossless Unicode config and leaner polling** - Generated config preserves emoji, and cached access tokens are reused until expiry, roughly halving Friend Activity requests
-- **BUGFIX:** **Safer debug utilities and container output** - Token validation accepts only HTTPS Spotify destinations without redirects, the secret grabber runs non-root and direct Linux output instructions map host IDs when they differ from 1000
+- **BUGFIX:** **Alerts retried until every channel succeeds** - Failed Friend Activity and scrobble-health alerts stay pending until every enabled email and webhook channel goes through. Successful channels are not sent again while another channel retries
+- **BUGFIX:** **Clearer missing-play alerts** - Outage notifications now name the first missing play and correctly label the displayed tracks
+- **BUGFIX:** **Reliable Spotify links** - Links built from a Spotify URI are now parsed exactly instead of guessed
+- **BUGFIX:** **Accurate dotenv and activity-file state** - `SIGHUP` now clears removed secrets and resets caches while activity flag files are written atomically
+- **BUGFIX:** **Hardened email notifications** - A friend's display name is now escaped in emails, so it can no longer inject markup, a live link or a tracking image
+- **BUGFIX:** **Webhook delivery respects `VERIFY_SSL`** - Discord and ntfy now honor the same TLS setting as other requests and follow no redirects, so alert content and headers cannot reach an unconfigured host
+- **BUGFIX:** **Configuration files are read as data** - The config file is now parsed instead of executed, so it can no longer run code at startup. Settings dropped by older upgrades are ignored gracefully and config backups keep owner-only permissions
+- **BUGFIX:** **Connectivity check respects configuration** - The startup internet check now honors `CHECK_INTERNET_URL`, `CHECK_INTERNET_TIMEOUT` and `VERIFY_SSL`
+- **BUGFIX:** **Reliable anti-hang watchdog** - The watchdog can no longer be disabled by a nested request timer
+- **BUGFIX:** **Safer debug utilities** - `spotify_monitor_totp_test` now accepts only HTTPS Spotify destinations for token validation and follows no redirects
+- **BUGFIX:** **Smaller fixes** - Generated config preserves emoji, track IDs are validated before local playback and the direct Linux container instructions map host IDs when they differ from 1000
 
 # Changes in 3.2.1 (04 Aug 2026)
 
