@@ -307,6 +307,23 @@ Spotify Monitor normally checks every 30 seconds. Verbose mode reports token ref
 
 Use `--truncate N` or `TRUNCATE_CHARS` to limit screen line width. Set it to `999` to detect the terminal width automatically. Truncation does not change log files and is ignored when logging is disabled with `-d`.
 
+<a id="coloured-terminal-output"></a>
+### Coloured Terminal Output
+
+Spotify Monitor colours live terminal output by default. Usernames, track, playlist and album names, dates, durations, counters, links and activity headers each get their own colour, and errors, warnings and received signals are highlighted as a whole line.
+
+Colour never reaches saved output: log files are written with the escape sequences stripped, so `grep`, `tail` and any log viewer see plain text.
+
+Turn it off for one run with `--no-color`, or permanently with `COLORED_OUTPUT = False` in the configuration file. The setting is read before the startup banner is printed, so a configured value applies to the very first line of output. Colour also switches itself off when it cannot be displayed safely: when output is redirected or piped, when `TERM` is unset or `dumb`, and when the standard [`NO_COLOR`](https://no-color.org/) environment variable is set. On Windows, install the optional `colorama` package for the best results in the classic Command Prompt.
+
+Override individual colours with `COLOR_THEME`. It is merged over the built-in theme, so you only name the parts you want to change:
+
+```ini
+COLOR_THEME = { "track": "bright_magenta bold", "username": "green" }
+```
+
+See [Terminal Colours](configuration.md#terminal-colours) for every theme key and the accepted colour and style names.
+
 <a id="listing-mode"></a>
 ## Listing Mode
 
@@ -563,7 +580,7 @@ This feature is not available for a native Windows process because Windows suppo
 <a id="coloring-log-output-with-grc"></a>
 ## Coloring Log Output with GRC
 
-[GRC](https://github.com/garabik/grc) can color saved log files when you view them in a terminal.
+Spotify Monitor colours live terminal output through `COLORED_OUTPUT` and `COLOR_THEME`. To colour saved log files when you view them later, you can use [GRC](https://github.com/garabik/grc).
 
 Add to your GRC config (`~/.grc/grc.conf`):
 
