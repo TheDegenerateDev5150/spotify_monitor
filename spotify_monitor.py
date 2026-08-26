@@ -1056,7 +1056,7 @@ from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath, PureWindowsPath
 import secrets
 import unicodedata
-from typing import Any, Callable, List, Optional, Sequence, Union, cast
+from typing import Any, Callable, List, Optional, Sequence, Tuple, Union, cast
 from email.utils import parseaddr, parsedate_to_datetime
 
 import urllib3
@@ -6648,6 +6648,50 @@ def runtime_configuration_errors() -> List[str]:
     return errors
 
 
+# Returns whether one secret holds a usable value, treating the shipped 'your_...' defaults as unset
+def doctor_secret_is_set(value) -> bool:
+    return isinstance(value, str) and bool(value.strip()) and not value.strip().startswith("your_")
+
+
+# Groups configured secret names by the source each value actually came from
+def doctor_secret_sources(env_path=None) -> Tuple[List[str], List[str], List[str]]:
+    file_keys = set()
+    if env_path:
+        try:
+            from dotenv import dotenv_values
+            file_keys = {key for key, value in dotenv_values(env_path, interpolate=False).items() if value}
+        except Exception:
+            file_keys = set()
+    from_file: List[str] = []
+    from_environment: List[str] = []
+    from_settings: List[str] = []
+    for key in SECRET_KEYS:
+        if not doctor_secret_is_set(globals().get(key)):
+            continue
+        if key in file_keys:
+            from_file.append(key)
+        elif os.environ.get(key):
+            from_environment.append(key)
+        else:
+            from_settings.append(key)
+    return from_file, from_environment, from_settings
+
+
+# Reports which secrets are in effect and where each one was read from
+def doctor_secret_checks(env_path=None) -> List[DoctorCheck]:
+    from_file, from_environment, from_settings = doctor_secret_sources(env_path)
+    checks: List[DoctorCheck] = []
+    if from_file:
+        checks.append(make_doctor_check("Configuration", "PASS", "Secrets loaded from the dotenv file", ", ".join(from_file)))
+    if from_environment:
+        checks.append(make_doctor_check("Configuration", "PASS", "Secrets loaded from the environment", ", ".join(from_environment)))
+    if from_settings:
+        checks.append(make_doctor_check("Configuration", "PASS", "Secrets loaded from the configuration file or command line", ", ".join(from_settings)))
+    if not checks:
+        checks.append(make_doctor_check("Configuration", "PASS", "No secrets loaded", "Nothing was read from a dotenv file, the environment or the command line"))
+    return checks
+
+
 # Validates effective config values and configured file destinations without writing them
 def doctor_check_configuration(config_path=None, env_path=None, startup_checks: Sequence[DoctorCheck] = (), target_value=None, lastfm_username=None) -> List[DoctorCheck]:
     checks = list(startup_checks)
@@ -6661,6 +6705,7 @@ def doctor_check_configuration(config_path=None, env_path=None, startup_checks: 
             checks.append(make_doctor_check("Configuration", "PASS", "Dotenv file loaded", f"Path: {env_path}"))
         else:
             checks.append(make_doctor_check("Configuration", "PASS", "No dotenv file selected", "Using environment variables and other configured sources"))
+    checks.extend(doctor_secret_checks(env_path))
 
     if MONITOR_MODE != "scrobble_health" and TOKEN_SOURCE not in ("cookie", "client"):
         advice = classify_recovery_error(context="config_invalid", detail=f"TOKEN_SOURCE must be cookie or client, not {TOKEN_SOURCE!r}")
