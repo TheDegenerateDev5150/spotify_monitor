@@ -102,6 +102,7 @@ For the manual single-file method, optional extras and upgrade commands for ever
 - **Track Context**: View **playlist, artist** and **album info** with clickable URLs.
 - **Skip Detection**: Identify exactly when and how long a song was played.
 - **Global Search**: Instant links to **Spotify, YouTube Music, Apple Music, Tidal, lyrics** and more.
+- **Coloured Output**: Readable terminal colours with a **customizable theme**, while log files stay plain text.
 
 ### 🔔 Smart Notifications
 - **Multi-Channel**: Instant alerts via **Email** and **Webhooks** (**Discord**, **ntfy** etc.).
