@@ -535,6 +535,53 @@ Email and webhooks work separately. If one fails, Spotify Monitor can still send
 
 If the webhook service temporarily refuses a message, Spotify Monitor tries once more and waits at most five seconds. Spotify monitoring continues normally and its retry behavior is unchanged.
 
+<a id="terminal-colours"></a>
+## Terminal Colours
+
+`COLORED_OUTPUT` controls whether live terminal output is coloured. It defaults to `True` and is read before the startup banner is printed, so a configured value applies to the first line of output. `--no-color` disables colour for one run. Colour also switches itself off when output is redirected or piped, when `TERM` is unset or `dumb` and when the standard [`NO_COLOR`](https://no-color.org/) environment variable is set. Log files are always written with the escape sequences stripped.
+
+`COLOR_THEME` overrides individual colours. It is merged over the built-in theme, so name only the parts you want to change:
+
+```ini
+COLOR_THEME = { "track": "bright_magenta bold", "username": "green" }
+```
+
+A value combines one colour with any number of style attributes, separated by spaces or `+`, for example `"bright_cyan bold"`, `"red underline"` or `"bright_magenta bold underline"`. An empty string leaves that part uncoloured.
+
+| Colours | Styles |
+| --- | --- |
+| `black`, `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `white` and the matching `bright_` variants such as `bright_red` | `bold`, `dim`, `underline`, `blink` |
+
+Parts with the same name mean the same thing in [spotify_profile_monitor](https://github.com/misiektoja/spotify_profile_monitor), so a `COLOR_THEME` block can be shared between the two tools. Each tool lists only the parts it actually colours, so a few names appear in one and not the other.
+
+| Theme key | Colours |
+| --- | --- |
+| `header` | The startup banner |
+| `username` | Spotify display names |
+| `user_uri_id` | Spotify user IDs and URIs |
+| `status_active` | `ACTIVE`, `PRIVATE MODE`, `RESUMED` and `LOOP` |
+| `status_inactive` | `INACTIVE`, `SKIPPED` and `PAUSED` |
+| `status_offline` | `OFFLINE` |
+| `status_other` | Any other reported status word |
+| `artist` | Artist names and artist context rows |
+| `track` | Track names and quoted names |
+| `album` | Album names and album context rows |
+| `playlist` | Playlist names |
+| `duration` | Track durations and elapsed times |
+| `status_change` | The `CONT` marker on a resumed track |
+| `timestamp_label` | The `Timestamp:` label. Empty by default, so the label stays plain like in the sibling monitors |
+| `timestamp_value` | The timestamp value |
+| `info`, `warning`, `error`, `signal` | Informational, warning, error and received-signal lines |
+| `email`, `webhook` | Notification delivery lines |
+| `date`, `date_range` | Single dates and times, and date or hour ranges |
+| `boolean_true`, `boolean_false` | `True` / `Enabled` and `False` / `Disabled` |
+| `count_up`, `count_down` | Reported changes only, such as `from 10 to 12` and the `(+2)` / `(-2)` differences. A static count is left plain |
+| `link` | URLs |
+
+On Windows, install the optional `colorama` package for the best results in the classic Command Prompt. Windows Terminal needs nothing extra.
+
+To colour saved log files when you view them later, see [Coloring Log Output with GRC](usage.md#coloring-log-output-with-grc).
+
 <a id="storing-secrets"></a>
 ## Storing Secrets
 
