@@ -17,6 +17,7 @@ wcwidth (optional, needed by TRUNCATE_CHARS feature)
 Pillow (optional, needed only when NTFY_IMAGES attaches artwork to ntfy alerts)
 spotipy (optional, used when legacy OAuth app credentials are configured)
 pycookiecheat (optional, used for Chrome, Brave and Chromium cookie import)
+colorama (optional, for better colours on Windows terminals)
 """
 
 VERSION = "3.3"
@@ -506,6 +507,57 @@ HORIZONTAL_LINE = 113
 # Whether to clear the terminal screen after starting the tool
 CLEAR_SCREEN = True
 
+# Whether to use coloured output in the terminal (auto-disabled if the terminal
+# does not appear to support colours or when output is redirected to a file)
+# Can also be disabled via the --no-color flag
+COLORED_OUTPUT = True
+
+# Colour theme used for different parts of the output
+# Keys are logical names used by the tool, values are colour/style strings
+# You can combine multiple attributes with spaces or '+', for example:
+#   "bright_cyan bold", "yellow", "red underline", "bright_magenta bold underline", "red bold blink"
+# Valid colour names: black, red, green, yellow, blue, magenta, cyan, white,
+# and their bright_ variants (bright_red, bright_green, ...).
+COLOR_THEME = {
+    # Startup banner
+    "header": "bright_cyan",
+    # Identity
+    "username": "blue underline",
+    "user_uri_id": "bright_magenta",
+    # Activity status values
+    "status_active": "green",
+    "status_inactive": "red",
+    "status_offline": "red",
+    "status_other": "white",
+    # Music info
+    "artist": "bright_yellow",
+    "track": "bright_yellow",
+    "album": "yellow",
+    "playlist": "yellow",
+    "duration": "green",
+    # Activity info
+    "status_change": "yellow",
+    # Misc
+    "timestamp_label": "",
+    "timestamp_value": "cyan",
+    "info": "cyan",
+    "warning": "yellow",
+    "error": "red",
+    "signal": "yellow",
+    "email": "bright_cyan",
+    "webhook": "bright_blue",
+    # Dates
+    "date": "magenta",
+    "date_range": "magenta",
+    # Boolean values
+    "boolean_true": "green",
+    "boolean_false": "red",
+    # Counters and differences
+    "count_up": "green",
+    "count_down": "red",
+    "link": "blue underline",
+}
+
 # Path to a file that is created when the user is active and deleted when inactive
 # Useful for external tools to detect streaming status
 # Can also be set via the --flag-file flag
@@ -834,6 +886,8 @@ DEBUG_MODE = False
 VERBOSE_MODE = False
 HORIZONTAL_LINE = 0
 CLEAR_SCREEN = False
+COLORED_OUTPUT = False
+COLOR_THEME: dict = {}
 SPOTIFY_INACTIVITY_CHECK_SIGNAL_VALUE = 0
 ENABLE_GENIUS_LYRICS_URL = False
 ENABLE_AZLYRICS_URL = False
@@ -1104,6 +1158,11 @@ except ImportError:
     pass
 NOTIFICATION_IMAGES_AVAILABLE = PILImage is not None
 
+try:
+    from colorama import init as colorama_init  # type: ignore[import]
+except ImportError:
+    colorama_init = None
+
 
 # Returns the Pillow requirement that supports the running Python version
 def notification_images_requirement() -> str:
@@ -1256,8 +1315,10 @@ class StartupSummaryRow:
 
 # Prints the selected ASCII startup banner with a separately aligned version
 def print_startup_banner() -> None:
-    print(STARTUP_BANNER)
-    print(f"{'':21}v{VERSION}\n")
+    # Each line carries its own colour so the whole banner sits inside a colour span. The line rules skip
+    # text that is already coloured, which keeps the ASCII art from being read as quoted names or dates
+    print("\n".join(colorize("header", line) if line else line for line in STARTUP_BANNER.splitlines()))
+    print(colorize("info", f"{'':21}v{VERSION}") + "\n")
 
 
 # Returns True when a configured value is empty or still uses its shipped placeholder
@@ -2623,30 +2684,456 @@ def normalize_log_separators(message):
     return re.sub(r"(?m)^─+$", lambda match: match.group(0).replace("─", "-"), message)
 
 
-# Every control character is dropped while tab and newline remain available for output layout
+# ANSI escape sequence helper used for colouring and stripping colour codes
+ANSI_ESCAPE_RE = re.compile(r"\x1B[@-_][0-?]*[ -/]*[@-~]")
+
+# The only escape sequence this tool emits is an SGR colour/style change, so it is the only one worth keeping
+SGR_SEQUENCE_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+# Every other control character is dropped, keeping only tab and newline. A carriage return would let Spotify-supplied
+# text overwrite an already printed line, and the inline doctor progress that uses one writes to the terminal directly
 TERMINAL_CONTROL_RE = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
 
 
-# Removes terminal control sequences from untrusted text before it reaches output streams
+# Removes terminal control sequences that Spotify-supplied text could use to drive the terminal, keeping this tool's own colours
 def sanitize_terminal_text(message):
     if not isinstance(message, str) or not message:
         return message
-    return TERMINAL_CONTROL_RE.sub("", message)
+    parts = []
+    position = 0
+    for match in SGR_SEQUENCE_RE.finditer(message):
+        parts.append(TERMINAL_CONTROL_RE.sub("", message[position:match.start()]))
+        parts.append(match.group(0))
+        position = match.end()
+    parts.append(TERMINAL_CONTROL_RE.sub("", message[position:]))
+    return "".join(parts)
+
+
+# Internal flag & style map for colour handling
+COLOR_ENABLED = False
+_COLOR_STYLES: dict = {}
+
+# Default built-in colour theme. Values can be overridden via COLOR_THEME in config
+DEFAULT_COLOR_THEME = {
+    # Startup banner
+    "header": "bright_cyan",
+    # Identity
+    "username": "blue underline",
+    "user_uri_id": "bright_magenta",
+    # Activity status values
+    "status_active": "green",
+    "status_inactive": "red",
+    "status_offline": "red",
+    "status_other": "white",
+    # Music info
+    "artist": "bright_yellow",
+    "track": "bright_yellow",
+    "album": "yellow",
+    "playlist": "yellow",
+    "duration": "green",
+    # Activity info
+    "status_change": "yellow",
+    # Misc
+    "timestamp_label": "",
+    "timestamp_value": "cyan",
+    "info": "cyan",
+    "warning": "yellow",
+    "error": "red",
+    "signal": "yellow",
+    "email": "bright_cyan",
+    "webhook": "bright_blue",
+    # Dates
+    "date": "magenta",
+    "date_range": "magenta",
+    # Boolean values
+    "boolean_true": "green",
+    "boolean_false": "red",
+    # Counters and differences
+    "count_up": "green",
+    "count_down": "red",
+    "link": "blue underline",
+}
+
+ANSI_RESET = "\033[0m"
+
+# Mapping of style names to ANSI SGR codes
+_STYLE_CODES = {
+    "bold": "1",
+    "dim": "2",
+    "underline": "4",
+    "blink": "5",
+    "black": "30",
+    "red": "31",
+    "green": "32",
+    "yellow": "33",
+    "blue": "34",
+    "magenta": "35",
+    "cyan": "36",
+    "white": "37",
+    "bright_black": "90",
+    "bright_red": "91",
+    "bright_green": "92",
+    "bright_yellow": "93",
+    "bright_blue": "94",
+    "bright_magenta": "95",
+    "bright_cyan": "96",
+    "bright_white": "97",
+}
+
+# Output labels whose value is coloured with one theme style, longest label first so a prefix cannot win
+_LABEL_STYLES = (
+    (("Username:", "Spotify user:", "Display name:"), "username"),
+    (("User URI ID:", "Spotify user ID:", "User URI:"), "user_uri_id"),
+    (("Last played:", "Last track:", "Track:"), "track"),
+    (("Playlist:",), "playlist"),
+    (("Context (Album):", "Album:"), "album"),
+    (("Context (Artist):", "Artist:"), "artist"),
+    (("Duration:",), "duration"),
+)
+
+# Pre-compiled regexes used for line-level colourisation
+_FROM_TO_COUNT_RE = re.compile(r"(from\s+)(\d+)(\s+to\s+)(\d+)")
+_DIFF_COUNT_UP_RE = re.compile(r"(\(\+\d+\))")
+_DIFF_COUNT_DOWN_RE = re.compile(r"(\(-\d+\))")
+_USER_TAG_RE = re.compile(r"((?:Spotify user|for user|by user|of user|Monitoring(?:\s+Spotify)?\s+user):?)([\t ]+)((?!ID\b)[\w.:-]+)")
+
+# A quoted value right after "user" is the monitored URI ID, the same value the "User URI ID:" row reports
+_QUOTED_USER_ID_CONTEXT_RE = re.compile(r"\buser(?:\s+id)?\s+$", re.IGNORECASE)
+_DURATION_RE = re.compile(r"~?\b[0-9]{1,20}[ \t]{1,20}(?:seconds?|minutes?|hours?|days?|weeks?|months?|years?)\b", re.IGNORECASE)
+_LONG_DATE_RE = re.compile(r"\b(?:\w{3}\s+)?\d{1,2}\s+\w{3}(?:\s+\d{2,4})?[\s,]*\d{2}:\d{2}(:\d{2})?(\s*[AP]M)?\b", re.IGNORECASE)
+_TIME_ONLY_RE = re.compile(r"(?<![\w:])(~?(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?(?:\s*[AP]M)?)(?![\w:])", re.IGNORECASE)
+_SHORT_RANGE_DATE_RE = re.compile(r"\(\w{3}\s+\d{1,2}\s+\w{3}\s+\d{2}:\d{2}(\s*[AP]M)?\s*-\s*\d{2}:\d{2}(\s*[AP]M)?\)", re.IGNORECASE)
+_DATE_RANGE_RE = re.compile(r"\b\w{3}\s+\d{1,2}\s+\w{3}\s+\d{2}:\d{2}(\s*[AP]M)?\s*-\s*\d{2}:\d{2}(\s*[AP]M)?\b", re.IGNORECASE)
+_HOUR_RANGE_RE = re.compile(r"\b\d{2}:\d{2}(\s*[AP]M)?\s*-\s*\d{2}:\d{2}(\s*[AP]M)?\b", re.IGNORECASE)
+_URL_RE = re.compile(r"(https?://[^\s\]]+)")
+_PERCENTAGE_RE = re.compile(r"\(\d{1,3}%")
+_BOOLEAN_TRUE_RE = re.compile(r"\bTrue\b|\bEnabled\b")
+_BOOLEAN_FALSE_RE = re.compile(r"\bFalse\b|\bDisabled\b")
+_NOTIFICATION_SUMMARY_STATE_RE = re.compile(r"^(\* Notifications \((?:email|webhook)\):\s+)(On|Off)(.*)$")
+# Doctor status markers, coloured with the same theme parts the reference tools use for them
+_DOCTOR_MARK_RE = re.compile(r"^\[(PASS|WARN|FAIL|SKIP)\]")
+_DOCTOR_MARK_STYLES = {"PASS": "boolean_true", "WARN": "warning", "FAIL": "error", "SKIP": "info"}
+# Quoted names such as track, playlist and album titles. At least one word character is required so a run of
+# ASCII art between two apostrophes is not read as a name
+_QUOTED_CONTENT_RE = re.compile(r"(')([^'\n]*\w[^'\n]*)(')")
+
+# Quoted values shaped like a file name or a filesystem path stay plain, since a log or state destination is
+# not content. Spotify names routinely contain slashes and dots, so only these two shapes are excluded
+_QUOTED_FILE_LIKE_RE = re.compile(r"^[~.]?[\\/]|^[A-Za-z]:[\\/]|\.[A-Za-z0-9]{1,8}$")
+
+# Listing rows that name one playlist, for example "- 'Playlist name'"
+_LIST_ITEM_NAME_RE = re.compile(r"^\s*-\s+'")
+_PLAYBACK_STOPPED_RE = re.compile(r"\b(SKIPPED|PAUSED)\b")
+_PLAYBACK_STARTED_RE = re.compile(r"\b(RESUMED|LOOP|PLAYING)\b")
+_PLAYBACK_CHANGED_RE = re.compile(r"\b(CONT)\b")
+_ACTIVE_WORD_RE = re.compile(r"\b(ACTIVE|PRIVATE MODE)\b")
+_INACTIVE_WORD_RE = re.compile(r"\b(INACTIVE|OFFLINE)\b")
+
+
+# Builds ANSI escape sequence from a style description string
+def _build_ansi_sequence(style_str):
+    if not style_str:
+        return ""
+    parts = re.split(r"[+ ]+", style_str.strip().lower())
+    codes = []
+    for p in parts:
+        code = _STYLE_CODES.get(p)
+        if code:
+            codes.append(code)
+    if not codes:
+        return ""
+    return f"\033[{';'.join(codes)}m"
+
+
+# Detects whether the given output stream likely supports ANSI colours
+def _stream_supports_color(stream):
+    if not hasattr(stream, "isatty") or not stream.isatty():
+        return False
+    if os.getenv("NO_COLOR"):
+        return False
+    # On Windows with colorama, skip TERM check since colorama handles ANSI translation
+    # Windows Terminal and Command Prompt often don't set TERM, but colorama works fine
+    if not (colorama_init and platform.system() == 'Windows'):
+        term = os.getenv("TERM", "")
+        if term.lower() in ("", "dumb", "unknown"):
+            return False
+    # If stdin is a pipe, we're likely being piped (e.g. via tee), so disable colors to avoid writing ANSI codes to files
+    if hasattr(sys.stdin, "isatty") and not sys.stdin.isatty():
+        return False
+    return True
+
+
+# Initializes colour handling based on config and terminal capabilities
+def init_color_output(stream):
+    global COLOR_ENABLED, _COLOR_STYLES
+
+    # On Windows, initialize colorama before checking color support
+    # This allows colorama to enable ANSI support, which may affect the isatty() check
+    if colorama_init and platform.system() == 'Windows':
+        try:
+            colorama_init(autoreset=False)
+        except Exception:
+            pass
+
+    COLOR_ENABLED = bool(globals().get("COLORED_OUTPUT", False)) and _stream_supports_color(stream)
+
+    if not COLOR_ENABLED:
+        _COLOR_STYLES = {}
+        return
+
+    user_theme = globals().get("COLOR_THEME") if isinstance(globals().get("COLOR_THEME"), dict) else {}
+    theme = {**DEFAULT_COLOR_THEME, **(user_theme or {})}
+
+    styles = {}
+    for name, style_str in theme.items():
+        seq = _build_ansi_sequence(style_str)
+        if seq:
+            styles[name] = seq
+    _COLOR_STYLES = styles
+
+
+# Applies a configured colour style (by logical part name) to the given text
+def colorize(part, text):
+    if not COLOR_ENABLED:
+        return text
+    start = _COLOR_STYLES.get(part)
+    if not start:
+        return text
+    return f"{start}{text}{ANSI_RESET}"
+
+
+# Returns coloured representation of a textual Spotify activity status string
+def colorize_status(status_text):
+    status = (status_text or "").strip().lower()
+    if status in ("active", "online", "available", "private mode", "yes"):
+        key = "status_active"
+    elif status in ("inactive", "no"):
+        key = "status_inactive"
+    elif status in ("offline", "invisible"):
+        key = "status_offline"
+    else:
+        key = "status_other"
+    return colorize(key, status_text)
+
+
+# Splits a recognized output label from its value without applying a backtracking expression
+def _split_output_label(value, labels):
+    body = value.rstrip("\n")
+    cursor = len(body) - len(body.lstrip())
+    if body[cursor:cursor + 1] == "*":
+        cursor += 1
+        cursor += len(body[cursor:]) - len(body[cursor:].lstrip())
+    for label in labels:
+        if not body.startswith(label, cursor):
+            continue
+        value_start = cursor + len(label)
+        value_start += len(body[value_start:]) - len(body[value_start:].lstrip())
+        if value_start == cursor + len(label):
+            return None
+        return body[:value_start], body[value_start:]
+    return None
+
+
+# Helper to apply a block style while preserving internal highlights
+def _apply_style_nested(line, style_name):
+    start_style = _COLOR_STYLES.get(style_name)
+    if not start_style:
+        return line
+    # Wrap the line in the style, but ensure internal resets (\033[0m), return to the style immediately instead of resetting to plain
+    line = f"{start_style}{line}{ANSI_RESET}"
+    line = line.replace(ANSI_RESET, f"{ANSI_RESET}{start_style}")
+    # Fix double trailing reset
+    if line.endswith(f"{ANSI_RESET}{start_style}"):
+        line = line[:-len(start_style)]
+    return line
+
+
+# Applies one substitution only to the parts of a line that are not already inside a colour span, so a later
+# rule cannot reclaim text an earlier rule has already coloured
+def _sub_outside_color(pattern, replacement, line):
+    if ANSI_RESET not in line:
+        return pattern.sub(replacement, line)
+    parts = []
+    position = 0
+    inside = False
+    for match in SGR_SEQUENCE_RE.finditer(line):
+        segment = line[position:match.start()]
+        parts.append(segment if inside else pattern.sub(replacement, segment))
+        parts.append(match.group(0))
+        inside = match.group(0) != ANSI_RESET
+        position = match.end()
+    trailing = line[position:]
+    parts.append(trailing if inside else pattern.sub(replacement, trailing))
+    return "".join(parts)
+
+
+# Colours one quoted name unless the quoted value is shaped like a file name or a path
+def _colorize_quoted_name(match, style_name):
+    name = match.group(2)
+    if _QUOTED_FILE_LIKE_RE.search(name):
+        return match.group(0)
+    # What sits right before the quote decides the colour, so a target ID is not read as a track title
+    if _QUOTED_USER_ID_CONTEXT_RE.search(match.string[:match.start()]):
+        style_name = "user_uri_id"
+    return f"{match.group(1)}{colorize(style_name, name)}{match.group(3)}"
+
+
+# Applies colour rules to a single output line
+def _colorize_line(line):
+    lowered = line.lower()
+
+    # Notification summary rows carry their own On/Off state word
+    notification_match = _NOTIFICATION_SUMMARY_STATE_RE.match(line)
+    if notification_match:
+        prefix, state, suffix = notification_match.groups()
+        state_style = "boolean_true" if state == "On" else "boolean_false"
+        return f"{prefix}{colorize(state_style, state)}{suffix}"
+
+    # Doctor status markers keep the rest of their line plain so long labels stay readable
+    doctor_match = _DOCTOR_MARK_RE.match(line)
+    if doctor_match:
+        return colorize(_DOCTOR_MARK_STYLES[doctor_match.group(1)], doctor_match.group(0)) + line[doctor_match.end():]
+
+    # Timestamp lines get a dimmed label and a coloured value
+    labeled_value = _split_output_label(line, ("Timestamp:",))
+    if labeled_value:
+        label, rest = labeled_value
+        colored = f"{colorize('timestamp_label', label)}{colorize('timestamp_value', rest)}"
+        return colored + ("\n" if line.endswith("\n") else "")
+
+    # Any '<something> URL:' row is a link, checked before the label table so 'Album URL:' is not read as 'Album:'
+    labeled_value = _split_output_label(line, ("URL:",))
+    if labeled_value or " URL:" in line:
+        line = _sub_outside_color(_URL_RE, lambda mo: colorize("link", mo.group(0)), line)
+        return line
+
+    # Status rows report the monitored friend's presence
+    labeled_value = _split_output_label(line, ("STATUS:", "Status:"))
+    if labeled_value:
+        label, status = labeled_value
+        colored = f"{label}{colorize_status(status)}"
+        return colored + ("\n" if line.endswith("\n") else "")
+
+    # Labelled Spotify metadata rows keep their label plain and colour only the value
+    for labels, style_name in _LABEL_STYLES:
+        labeled_value = _split_output_label(line, labels)
+        if not labeled_value:
+            continue
+        label, rest = labeled_value
+        colored = f"{label}{colorize(style_name, rest)}"
+        return colored + ("\n" if line.endswith("\n") else "")
+
+    # Highlight the Spotify user named inside a sentence
+    line = _sub_outside_color(_USER_TAG_RE, lambda mo: f"{mo.group(1)}{mo.group(2)}{colorize('user_uri_id', mo.group(3))}", line)
+
+    # Highlight counters and their differences
+    line = _sub_outside_color(_FROM_TO_COUNT_RE, lambda mo: f"{mo.group(1)}{colorize('count_up' if int(mo.group(4)) >= int(mo.group(2)) else 'count_down', mo.group(2))}{mo.group(3)}{colorize('count_up' if int(mo.group(4)) >= int(mo.group(2)) else 'count_down', mo.group(4))}", line)
+    line = _sub_outside_color(_DIFF_COUNT_UP_RE, lambda mo: colorize("count_up", mo.group(0)), line)
+    line = _sub_outside_color(_DIFF_COUNT_DOWN_RE, lambda mo: colorize("count_down", mo.group(0)), line)
+
+    # Highlight durations and listening percentages
+    line = _sub_outside_color(_DURATION_RE, lambda mo: colorize("duration", mo.group(0)), line)
+    line = _sub_outside_color(_PERCENTAGE_RE, lambda mo: f"({colorize('count_up', mo.group(0)[1:])}", line)
+
+    # Highlight date ranges before single dates so a range is not split into two dates
+    line = _sub_outside_color(_SHORT_RANGE_DATE_RE, lambda mo: colorize("date_range", mo.group(0)), line)
+    line = _sub_outside_color(_DATE_RANGE_RE, lambda mo: colorize("date_range", mo.group(0)), line)
+    line = _sub_outside_color(_HOUR_RANGE_RE, lambda mo: colorize("date_range", mo.group(0)), line)
+    line = _sub_outside_color(_LONG_DATE_RE, lambda mo: colorize("date", mo.group(0)), line)
+    line = _sub_outside_color(_TIME_ONLY_RE, lambda mo: colorize("date", mo.group(0)), line)
+
+    # Highlight URLs / links
+    line = _sub_outside_color(_URL_RE, lambda mo: colorize("link", mo.group(0)), line)
+
+    # Highlight quoted names, taking the colour of what the line is about. A line that is only a quoted string
+    # is a free-form description, so it stays plain instead of being read as a name
+    if not line.lstrip().startswith("'"):
+        if _LIST_ITEM_NAME_RE.match(line):
+            quoted_style = "playlist"
+        elif "username" in lowered:
+            quoted_style = "username"
+        elif "playlist" in lowered:
+            quoted_style = "playlist"
+        else:
+            quoted_style = "track"
+        line = _sub_outside_color(_QUOTED_CONTENT_RE, lambda mo: _colorize_quoted_name(mo, quoted_style), line)
+
+    # Highlight boolean values
+    line = _sub_outside_color(_BOOLEAN_TRUE_RE, lambda mo: colorize("boolean_true", mo.group(0)), line)
+    line = _sub_outside_color(_BOOLEAN_FALSE_RE, lambda mo: colorize("boolean_false", mo.group(0)), line)
+
+    # Highlight playback and presence keywords
+    line = _sub_outside_color(_PLAYBACK_STOPPED_RE, lambda mo: colorize("status_inactive", mo.group(0)), line)
+    line = _sub_outside_color(_PLAYBACK_STARTED_RE, lambda mo: colorize("status_active", mo.group(0)), line)
+    line = _sub_outside_color(_PLAYBACK_CHANGED_RE, lambda mo: colorize("status_change", mo.group(0)), line)
+    line = _sub_outside_color(_ACTIVE_WORD_RE, lambda mo: colorize("status_active", mo.group(0)), line)
+    line = _sub_outside_color(_INACTIVE_WORD_RE, lambda mo: colorize("status_inactive", mo.group(0)), line)
+
+    # Block highlighting (activity headers, errors, warnings, signals)
+    # Applied last so the internal colours above are preserved through the nesting logic
+    is_error = any(w in lowered for w in ("failure", "forbidden", "timeout", "critical:", "failed", "disappeared")) or (
+        "* error" in lowered and "[errors =" not in lowered
+    )
+    is_warning = any(w in lowered for w in ("* warning:", "caution:")) and "[warnings =" not in lowered
+    is_signal = "* signal" in lowered and "received" in lowered
+    is_info = "* info:" in lowered
+
+    if is_error:
+        line = _apply_style_nested(line, "error")
+    elif is_warning:
+        line = _apply_style_nested(line, "warning")
+    elif is_signal:
+        line = _apply_style_nested(line, "signal")
+    elif "sending email" in lowered:
+        line = _apply_style_nested(line, "email")
+    elif "sending webhook" in lowered:
+        line = _apply_style_nested(line, "webhook")
+    elif is_info:
+        line = _apply_style_nested(line, "info")
+
+    return line
+
+
+# Applies colourisation to multi-line text, preserving line breaks
+def apply_color_to_text(text):
+    if not COLOR_ENABLED or not isinstance(text, str):
+        return text
+
+    parts = []
+    for chunk in text.splitlines(keepends=True):
+        if chunk.endswith(("\n", "\r")):
+            stripped = chunk.rstrip("\r\n")
+            newline = chunk[len(stripped):]
+            parts.append(_colorize_line(stripped) + newline)
+        else:
+            parts.append(_colorize_line(chunk))
+    return "".join(parts)
+
+
+# Returns the underlying terminal behind any number of sanitizing stream wrappers
+def unwrap_terminal_stream(stream):
+    while isinstance(stream, TerminalStream):
+        stream = stream.terminal
+    return stream
 
 
 # Logger class to output messages to stdout and log file
 class Logger(object):
     def __init__(self, filename):
-        self.terminal = sys.stdout
+        # The early sanitizing stream is unwrapped so sanitizing and colouring happen exactly once.
+        # Writing through it would colourise every line twice, and the second pass no longer sees the
+        # label it already coloured, so it would recolour the value with the generic rules
+        self.terminal = unwrap_terminal_stream(sys.stdout)
         self.logfile = open(filename, "a", buffering=1, encoding="utf-8")
 
     def write(self, message):
         message = sanitize_terminal_text(message)
-        # Expand tabs for file output (stdout remains untouched)
-        self.logfile.write(normalize_log_separators(message.expandtabs(8)))
+        # Expand tabs for file output and strip colour codes so the log file stays plain text
+        self.logfile.write(normalize_log_separators(ANSI_ESCAPE_RE.sub("", message).expandtabs(8)))
+        # Truncate before colouring so escape sequences never count toward the displayed width
         if (TRUNCATE_CHARS):
             message = truncate_string_per_line(message, TRUNCATE_CHARS)
-        self.terminal.write(message)
+        self.terminal.write(apply_color_to_text(message))
         self.terminal.flush()
         self.logfile.flush()
 
@@ -2654,11 +3141,11 @@ class Logger(object):
         message = sanitize_terminal_text(message)
         if TRUNCATE_CHARS:
             message = truncate_string_per_line(message, TRUNCATE_CHARS)
-        self.terminal.write(message)
+        self.terminal.write(apply_color_to_text(message))
         self.terminal.flush()
 
     def log_only(self, message):
-        self.logfile.write(normalize_log_separators(sanitize_terminal_text(message).expandtabs(8)))
+        self.logfile.write(normalize_log_separators(ANSI_ESCAPE_RE.sub("", sanitize_terminal_text(message)).expandtabs(8)))
         self.logfile.flush()
 
     def flush(self):
@@ -2672,9 +3159,9 @@ class TerminalStream(object):
     def __init__(self, stream):
         self.terminal = stream
 
-    # Writes one sanitized message to the wrapped terminal
+    # Writes one sanitized and coloured message to the wrapped terminal
     def write(self, message):
-        self.terminal.write(sanitize_terminal_text(message))
+        self.terminal.write(apply_color_to_text(sanitize_terminal_text(message)))
         self.terminal.flush()
 
     # Writes one message to the terminal while matching the Logger interface
@@ -6463,6 +6950,43 @@ def find_scrobble_health_config_file(cli_path=None):
     return _find_config_file(cli_path, SCROBBLE_HEALTH_CONFIG_FILENAME)
 
 
+# Returns the --config-file value from raw arguments, before argparse has run
+def early_config_file_argument(arguments=None):
+    values = list(sys.argv[1:] if arguments is None else arguments)
+    for index, argument in enumerate(values):
+        if argument == "--config-file" and index + 1 < len(values):
+            return values[index + 1]
+        if argument.startswith("--config-file="):
+            return argument.split("=", 1)[1]
+    return None
+
+
+# Applies the config settings that take effect before argument parsing, leaving errors to the later load
+# The startup banner and the screen clear both run before argparse, so colour has to be resolved here or a
+# configured COLORED_OUTPUT would only take effect after the first output was already written
+def apply_early_output_config() -> None:
+    global CLEAR_SCREEN, COLORED_OUTPUT
+    try:
+        cli_path = early_config_file_argument()
+        if cli_path is not None and cli_path.casefold() == "none":
+            # Config discovery is disabled for this run, so there is nothing to peek at
+            return
+        scrobble_health_cli = "scrobble_health" in sys.argv[1:] or "--authorize-scrobble-health" in sys.argv[1:] or "--setup-scrobble-health" in sys.argv[1:]
+        expanded_path = os.path.expanduser(cli_path) if cli_path else None
+        config_path = find_scrobble_health_config_file(expanded_path) if scrobble_health_cli else find_config_file(expanded_path)
+        if not config_path:
+            return
+        # Reading a config no longer runs it, so this early peek cannot have side effects
+        values = parse_config_content(Path(config_path).read_text(encoding="utf-8"), str(config_path))
+    except Exception:
+        # A broken or unreadable config is reported with full detail once arguments are parsed
+        return
+    if isinstance(values.get("CLEAR_SCREEN"), bool):
+        CLEAR_SCREEN = values["CLEAR_SCREEN"]
+    if isinstance(values.get("COLORED_OUTPUT"), bool):
+        COLORED_OUTPUT = values["COLORED_OUTPUT"]
+
+
 # Loads one UTF-8 literal config atomically and optionally collects structured failures and ignored settings
 def load_config_file(config_path, namespace=None, error_out=None, report_errors=True, retired_out=None):
     target_namespace = globals() if namespace is None else namespace
@@ -7085,13 +7609,15 @@ def _doctor_terminal_stream():
 
 
 # Shows one transient doctor step only on an interactive terminal
+# The line stays uncoloured on purpose: it is erased by writing exactly len(line) spaces, and escape
+# sequences would make that width wrong and leave a styled remnant behind
 def _doctor_progress(label: str) -> None:
     terminal = _doctor_terminal_stream()
     if terminal.isatty():
         previous_width = getattr(_doctor_progress, "width", 0)
         if previous_width:
             terminal.write("\r" + (" " * previous_width) + "\r")
-        line = f"* Checking {sanitize_terminal_text(label)} ..."
+        line = f"* Checking {ANSI_ESCAPE_RE.sub('', sanitize_terminal_text(label))} ..."
         _doctor_progress.width = len(line)  # type: ignore[attr-defined]
         terminal.write("\r" + line)
         terminal.flush()
@@ -9740,7 +10266,7 @@ def select_monitor_mode(configured_mode: str, cli_mode: Optional[str] = None) ->
 
 # Parses command-line options then starts the selected command or monitoring mode
 def main():
-    global CLI_CONFIG_PATH, DOTENV_FILE, LIVENESS_CHECK_COUNTER, LOGIN_REQUEST_BODY_FILE, CLIENTTOKEN_REQUEST_BODY_FILE, REFRESH_TOKEN, LOGIN_URL, USER_AGENT, DEVICE_ID, SYSTEM_ID, USER_URI_ID, SP_DC_COOKIE, CSV_FILE, MONITOR_LIST_FILE, FILE_SUFFIX, DISABLE_LOGGING, DEBUG_MODE, VERBOSE_MODE, SP_LOGFILE, ACTIVE_NOTIFICATION, INACTIVE_NOTIFICATION, TRACK_NOTIFICATION, SONG_NOTIFICATION, SONG_ON_LOOP_NOTIFICATION, ERROR_NOTIFICATION, SCROBBLE_HEALTH_NOTIFICATION, WEBHOOK_ENABLED, WEBHOOK_URL, WEBHOOK_ACTIVE_NOTIFICATION, WEBHOOK_INACTIVE_NOTIFICATION, WEBHOOK_TRACK_NOTIFICATION, WEBHOOK_SONG_NOTIFICATION, WEBHOOK_SONG_ON_LOOP_NOTIFICATION, WEBHOOK_ERROR_NOTIFICATION, WEBHOOK_SCROBBLE_HEALTH_NOTIFICATION, SPOTIFY_CHECK_INTERVAL, SPOTIFY_INACTIVITY_CHECK, SPOTIFY_ERROR_INTERVAL, SPOTIFY_DISAPPEARED_CHECK_INTERVAL, MONITOR_MODE, LASTFM_USERNAME, LASTFM_API_KEY, SPOTIFY_SCROBBLE_CLIENT_ID, SPOTIFY_SCROBBLE_REDIRECT_URI, SPOTIFY_SCROBBLE_REFRESH_TOKEN, SCROBBLE_HEALTH_CHECK_INTERVAL, SCROBBLE_HEALTH_DEAD_PERIOD, SCROBBLE_HEALTH_MIN_UNMATCHED, SCROBBLE_HEALTH_MATCH_WINDOW, SCROBBLE_HEALTH_LOOKBACK, SCROBBLE_HEALTH_REPEAT_INTERVAL, SCROBBLE_HEALTH_STATE_FILE, TRACK_SONGS, SMTP_PASSWORD, stdout_bck, APP_VERSION, CPU_ARCH, OS_BUILD, PLATFORM, OS_MAJOR, OS_MINOR, CLIENT_MODEL, TOKEN_SOURCE, pyotp, USER_AGENT, FLAG_FILE, TRUNCATE_CHARS, SP_APP_TOKENS_FILE, SP_APP_CLIENT_ID, SP_APP_CLIENT_SECRET, NTFY_IMAGES, NTFY_SHORT
+    global CLI_CONFIG_PATH, DOTENV_FILE, LIVENESS_CHECK_COUNTER, LOGIN_REQUEST_BODY_FILE, CLIENTTOKEN_REQUEST_BODY_FILE, REFRESH_TOKEN, LOGIN_URL, USER_AGENT, DEVICE_ID, SYSTEM_ID, USER_URI_ID, SP_DC_COOKIE, CSV_FILE, MONITOR_LIST_FILE, FILE_SUFFIX, DISABLE_LOGGING, DEBUG_MODE, VERBOSE_MODE, SP_LOGFILE, ACTIVE_NOTIFICATION, INACTIVE_NOTIFICATION, TRACK_NOTIFICATION, SONG_NOTIFICATION, SONG_ON_LOOP_NOTIFICATION, ERROR_NOTIFICATION, SCROBBLE_HEALTH_NOTIFICATION, WEBHOOK_ENABLED, WEBHOOK_URL, WEBHOOK_ACTIVE_NOTIFICATION, WEBHOOK_INACTIVE_NOTIFICATION, WEBHOOK_TRACK_NOTIFICATION, WEBHOOK_SONG_NOTIFICATION, WEBHOOK_SONG_ON_LOOP_NOTIFICATION, WEBHOOK_ERROR_NOTIFICATION, WEBHOOK_SCROBBLE_HEALTH_NOTIFICATION, SPOTIFY_CHECK_INTERVAL, SPOTIFY_INACTIVITY_CHECK, SPOTIFY_ERROR_INTERVAL, SPOTIFY_DISAPPEARED_CHECK_INTERVAL, MONITOR_MODE, LASTFM_USERNAME, LASTFM_API_KEY, SPOTIFY_SCROBBLE_CLIENT_ID, SPOTIFY_SCROBBLE_REDIRECT_URI, SPOTIFY_SCROBBLE_REFRESH_TOKEN, SCROBBLE_HEALTH_CHECK_INTERVAL, SCROBBLE_HEALTH_DEAD_PERIOD, SCROBBLE_HEALTH_MIN_UNMATCHED, SCROBBLE_HEALTH_MATCH_WINDOW, SCROBBLE_HEALTH_LOOKBACK, SCROBBLE_HEALTH_REPEAT_INTERVAL, SCROBBLE_HEALTH_STATE_FILE, TRACK_SONGS, SMTP_PASSWORD, stdout_bck, APP_VERSION, CPU_ARCH, OS_BUILD, PLATFORM, OS_MAJOR, OS_MINOR, CLIENT_MODEL, TOKEN_SOURCE, pyotp, USER_AGENT, FLAG_FILE, TRUNCATE_CHARS, SP_APP_TOKENS_FILE, SP_APP_CLIENT_ID, SP_APP_CLIENT_SECRET, NTFY_IMAGES, NTFY_SHORT, COLORED_OUTPUT, COLOR_THEME
 
     if "--generate-config" in sys.argv and "--setup" not in sys.argv and "--setup-scrobble-health" not in sys.argv and "--authorize-scrobble-health" not in sys.argv and "--set-sp-dc" not in sys.argv and "--set-lastfm-credentials" not in sys.argv and "--set-webhook-url" not in sys.argv:
         config_content = generate_config_with_current_values()
@@ -9771,6 +10297,18 @@ def main():
         sys.exit(0)
 
     stdout_bck = sys.stdout
+
+    # The screen clear and the startup banner both run before arguments are parsed, so the few config
+    # settings that decide them are read here too. Otherwise COLORED_OUTPUT = False in a config file
+    # would still colour the banner
+    apply_early_output_config()
+
+    # Initialise colour handling based on CLI args (early check) and terminal capabilities
+    if "--no-color" in sys.argv:
+        globals()["COLORED_OUTPUT"] = False
+
+    init_color_output(stdout_bck)
+
     if not isinstance(sys.stdout, TerminalStream):
         sys.stdout = TerminalStream(sys.stdout)
 
@@ -10245,6 +10783,13 @@ def main():
         help="Disable logging to spotify_monitor_<user_uri_id/file_suffix>.log"
     )
     opts.add_argument(
+        "--no-color",
+        dest="no_color",
+        action="store_true",
+        default=None,
+        help="Disable coloured output in the terminal"
+    )
+    opts.add_argument(
         "--debug",
         dest="debug_mode",
         action="store_true",
@@ -10682,6 +11227,12 @@ def main():
         val = os.getenv(environment_key)
         if val is not None:
             globals()[environment_key] = val
+
+    if args.no_color is True:
+        COLORED_OUTPUT = False
+
+    # Re-initialise colour output to pick up COLORED_OUTPUT and any COLOR_THEME changes from the config file
+    init_color_output(stdout_bck)
 
     if args.token_source:
         TOKEN_SOURCE = args.token_source
