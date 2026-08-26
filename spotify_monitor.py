@@ -519,8 +519,9 @@ COLORED_OUTPUT = True
 # Valid colour names: black, red, green, yellow, blue, magenta, cyan, white,
 # and their bright_ variants (bright_red, bright_green, ...).
 COLOR_THEME = {
-    # Startup banner
+    # Headings and commands the wizard tells you to run
     "header": "bright_cyan",
+    "section": "bright_white",
     # Identity
     "username": "blue underline",
     "user_uri_id": "bright_magenta",
@@ -2715,8 +2716,9 @@ _COLOR_STYLES: dict = {}
 
 # Default built-in colour theme. Values can be overridden via COLOR_THEME in config
 DEFAULT_COLOR_THEME = {
-    # Startup banner
+    # Headings and commands the wizard tells you to run
     "header": "bright_cyan",
+    "section": "bright_white",
     # Identity
     "username": "blue underline",
     "user_uri_id": "bright_magenta",
@@ -3078,7 +3080,9 @@ def _colorize_line(line):
     is_signal = "* signal" in lowered and "received" in lowered
     is_info = "* info:" in lowered
 
-    if is_error:
+    if lowered.startswith("to fix:"):
+        line = _apply_style_nested(line, "info")
+    elif is_error:
         line = _apply_style_nested(line, "error")
     elif is_warning:
         line = _apply_style_nested(line, "warning")
@@ -7572,13 +7576,13 @@ def render_doctor_notice() -> None:
 
 # Renders one sectioned ASCII doctor report with action lines for failures
 def render_doctor_report(report: DoctorReport) -> str:
-    lines = ["Doctor"]
+    lines = [colorize("header", "Doctor")]
     sections = ("Environment", "Configuration", "Authentication", "Metadata", "Connectivity", "Target", "Scrobble health", "Notifications")
     for section in sections:
         section_checks = [item for item in report.checks if item.section == section]
         if not section_checks:
             continue
-        lines.extend(("", section))
+        lines.extend(("", colorize("section", section)))
         for check in section_checks:
             lines.append(f"[{'PASS' if check.status == 'PASS' else check.status}] {check.label}")
             if check.detail:
@@ -7591,12 +7595,12 @@ def render_doctor_report(report: DoctorReport) -> str:
     failures = sum(check.status == "FAIL" for check in report.checks)
     warnings = sum(check.status == "WARN" for check in report.checks)
     if failures:
-        summary_line = f"  {failures} check(s) failed, {warnings} warning(s). Fix the failures above before relying on the tool."
+        summary_line = colorize("error", f"  {failures} check(s) failed, {warnings} warning(s). Fix the failures above before relying on the tool.")
     elif warnings:
-        summary_line = f"  All critical checks passed with {warnings} warning(s). Review the warnings above."
+        summary_line = colorize("warning", f"  All critical checks passed with {warnings} warning(s). Review the warnings above.")
     else:
-        summary_line = "  All checks passed. You are good to go!"
-    lines.extend(("", "Summary", summary_line, "", f"Guide: {DOCTOR_GUIDE_URL}"))
+        summary_line = colorize("boolean_true", "  All checks passed. You are good to go!")
+    lines.extend(("", colorize("header", "Summary"), summary_line, "", f"Guide: {DOCTOR_GUIDE_URL}"))
     return sanitize_error_text("\n".join(lines))
 
 
@@ -7799,7 +7803,7 @@ def _wizard_validate_destination(method: str, path, label: str) -> Path:
 # Prints one labelled command with sibling-style indentation and spacing
 def _wizard_print_command(label: str, command: str, suffix: str = "") -> None:
     print(label)
-    print(f"    {command}{suffix}\n")
+    print(f"    {colorize('section', command)}{colorize('info', suffix) if suffix else ''}\n")
 
 
 # Converts a wizard destination into the matching path inside the /data container mount
@@ -7841,9 +7845,9 @@ def _wizard_print_monitor_after_doctor(config_path, env_path, target: Optional[s
     method = _wizard_install_method()
     command_target = None if target_is_saved else target or "SPOTIFY_USER_URI_ID"
     command = _wizard_action_command(method, "", config_path, env_path, command_target)
-    print("\nNext steps\n")
+    print(colorize('header', "\nNext steps\n"))
     print("After Doctor passes, start monitoring:")
-    print(f"    {command}\n")
+    print(f"    {colorize('section', command)}\n")
 
 
 # Prints the install-aware scrobble health command after a successful Doctor run
@@ -7861,9 +7865,9 @@ def _wizard_print_scrobble_health_monitor_after_doctor(config_path, env_path, us
     if include_refresh_token_placeholder:
         action += " --scrobble-refresh-token SPOTIFY_SCROBBLE_REFRESH_TOKEN"
     command = _wizard_action_command(method, action, config_path, env_path)
-    print("\nNext steps\n")
+    print(colorize('header', "\nNext steps\n"))
     print("After Doctor passes, start scrobble health monitoring:")
-    print(f"    {command}\n")
+    print(f"    {colorize('section', command)}\n")
     if include_api_key_placeholder or include_refresh_token_placeholder:
         print("Replace the uppercase credential placeholders before running. Doctor does not repeat private command-line values.\n")
 
@@ -8056,7 +8060,7 @@ def _wizard_print_default_guidance() -> None:
 
 # Prints the installation method and output files shared by both setup wizards
 def _wizard_print_setup_destinations(method: str, config_path: Path, env_path: Path) -> None:
-    print(f"Detected install method: {method}")
+    print(f"Detected install method: {colorize('username', method)}")
     print(f"Configuration:          {config_path}")
     print(f"Dotenv:                 {env_path}\n")
 
@@ -8064,7 +8068,7 @@ def _wizard_print_setup_destinations(method: str, config_path: Path, env_path: P
 # Reads one setup line and exits cleanly when Ctrl+C or Ctrl+D cancels input
 def _wizard_input(prompt_text: str) -> str:
     try:
-        return input(prompt_text)
+        return input(colorize("info", prompt_text))
     except (EOFError, KeyboardInterrupt):
         print("\nSetup cancelled.")
         raise SystemExit(1) from None
@@ -8103,7 +8107,7 @@ def _wizard_ask_choice(question: str, options, default_index: int = 0) -> int:
     for index, option in enumerate(options, start=1):
         label, description = option
         marker = " (default)" if index - 1 == default_index else ""
-        print(f"  {index}. {label}{marker}")
+        print(f"  {colorize('username', str(index))}. {label}{colorize('info', marker)}")
         if description:
             for line in description.splitlines():
                 print(f"     {line}")
@@ -8565,7 +8569,7 @@ def _wizard_collect_client_auth(config_values: dict, env_path: Path, secret_upda
 
 # Checks the target follow state and offers one confirmed follow mutation when needed
 def _wizard_offer_target_follow(target_user_id: str) -> str:
-    print("\nFollowing check\n")
+    print(colorize('header', "\nFollowing check\n"))
     report = DoctorReport()
     checks = doctor_check_authentication(report)
     if report.access_token is None:
@@ -8783,7 +8787,7 @@ def _wizard_collect_destination_section(state: WizardSetupState, method: str) ->
 
 # Prints the current editable setup answers without exposing secrets
 def _wizard_print_setup_summary(state: WizardSetupState, method: str) -> None:
-    print("\nSetup summary\n")
+    print(colorize('header', "\nSetup summary\n"))
     print(f"  Target: {state.target}")
     print(f"  Persist target: {'yes' if state.persist_target else 'no'}")
     print(f"  Polling interval: {_wizard_format_duration(int(state.config_values['SPOTIFY_CHECK_INTERVAL']))}")
@@ -8953,7 +8957,7 @@ def _wizard_collect_scrobble_health_destination_section(state: ScrobbleHealthSet
 
 # Prints the current editable scrobble health answers without exposing secrets
 def _wizard_print_scrobble_health_setup_summary(state: ScrobbleHealthSetupState, method: str) -> None:
-    print("\nSetup summary\n")
+    print(colorize('header', "\nSetup summary\n"))
     print(f"  Last.fm user: {state.username}")
     print(f"  Missing-play threshold: {state.config_values['SCROBBLE_HEALTH_MIN_UNMATCHED']}")
     print(f"  Dead period: {_wizard_format_duration(int(state.config_values['SCROBBLE_HEALTH_DEAD_PERIOD']))}")
@@ -9032,7 +9036,7 @@ def _wizard_welcome() -> None:
     setup_suffix = "   (or just answer Y below)" if interactive else ""
     _wizard_print_command("Easiest start (guided setup wizard):", f"{prefix} --setup", setup_suffix)
     _wizard_print_command("Check setup before monitoring:", f"{prefix} --doctor <spotify_target>")
-    print(f"Full options: {prefix} --help")
+    print(f"Full options: {colorize('section', prefix + ' --help')}")
     print(f"\nGuide:        {QUICK_START_GUIDE_URL}\n")
     if interactive and _wizard_ask_yes_no("Run the guided setup wizard now?", default=True):
         print()
@@ -9052,7 +9056,7 @@ def run_setup_wizard(initial_target: Optional[str] = None, config_file=None, env
     except ValueError as exc:
         print(f"Setup cannot start: {exc}")
         raise SystemExit(1) from None
-    print("Setup Wizard\n")
+    print(colorize('header', "Setup Wizard\n"))
     print("This asks a few questions and writes a ready-to-run configuration.")
     _wizard_print_default_guidance()
     print("Secrets go to the dotenv file. Non-secret settings go to the config file.")
@@ -9090,7 +9094,7 @@ def run_setup_wizard(initial_target: Optional[str] = None, config_file=None, env
     except Exception:
         print(f"Setup could not write configuration file '{config_path}'. No dotenv changes were attempted.")
         raise SystemExit(1) from None
-    print("\nSaved files\n")
+    print(colorize('header', "\nSaved files\n"))
     print(f"  Configuration: {write_status['path']}")
     if write_status["backup_path"]:
         print(f"  Backup:        {write_status['backup_path']}")
@@ -9112,7 +9116,7 @@ def run_setup_wizard(initial_target: Optional[str] = None, config_file=None, env
             if follow_status in ("already_followed", "followed"):
                 auth["validated"] = True
         else:
-            print("\nFollowing check\n")
+            print(colorize('header', "\nFollowing check\n"))
             print("Follow status could not be checked because the saved setup could not be loaded.")
     doctor_failed = False
     doctor_ran = False
@@ -9139,7 +9143,7 @@ def run_setup_wizard(initial_target: Optional[str] = None, config_file=None, env
     doctor_command = _wizard_action_command(method, "--doctor", config_path, env_path, doctor_target, host_os=host_os)
     monitor_target = None if persist_target else target
     monitor_command = _wizard_action_command(method, "", config_path, env_path, monitor_target, host_os=host_os)
-    print("\nNext steps\n")
+    print(colorize('header', "\nNext steps\n"))
     if not auth["complete"]:
         print("Setup was saved. Authentication still needs to be completed.\n")
         if config_values["TOKEN_SOURCE"] == "cookie" and method in ("docker", "compose") and auth.get("browser") and host_os:
@@ -9171,7 +9175,7 @@ def run_setup_wizard(initial_target: Optional[str] = None, config_file=None, env
             print("docker compose up --no-log-prefix requires a persisted target. Use this direct command instead:")
         else:
             print(start_label)
-        print(f"    {monitor_command}\n")
+        print(f"    {colorize('section', monitor_command)}\n")
     print(f"Guide: {QUICK_START_GUIDE_URL}\n")
     local_ready = method in ("manual", "pip") and auth["complete"] and not doctor_failed and (auth["validated"] or doctor_ran)
     if local_ready and _wizard_ask_yes_no("Start monitoring now? Monitoring will continue until Ctrl+C.", default=True):
@@ -9242,7 +9246,7 @@ def run_scrobble_health_setup_wizard(config_file=None, env_file=None) -> None:
     except Exception:
         print(f"Setup could not write configuration file '{config_path}'. No dotenv changes were attempted.")
         raise SystemExit(1) from None
-    print("\nSaved files\n")
+    print(colorize('header', "\nSaved files\n"))
     print(f"  Configuration: {write_status['path']}")
     if write_status["backup_path"]:
         print(f"  Backup: {write_status['backup_path']}")
@@ -9267,7 +9271,7 @@ def run_scrobble_health_setup_wizard(config_file=None, env_file=None) -> None:
     authorize_command = _wizard_action_command(method, "--authorize-scrobble-health", config_path, env_path)
     doctor_command = _wizard_action_command(method, "--monitor-mode scrobble_health --doctor", config_path, env_path)
     monitor_command = _wizard_action_command(method, "--monitor-mode scrobble_health", config_path, env_path)
-    print("\nNext steps\n")
+    print(colorize('header', "\nNext steps\n"))
     if not auth["complete"]:
         print("Setup was saved. Spotify recent-play authorization still needs to be completed.\n")
         _wizard_print_command("Authorize the user-owned Spotify app:", authorize_command)
