@@ -87,8 +87,8 @@ def test_report_markers_and_sections(monkeypatch):
     for section in ("Environment", "Configuration", "Authentication", "Metadata", "Connectivity", "Target", "Notifications", "Summary"):
         assert section in rendered
     assert "[PASS]" in rendered
-    assert "0 failure(s)" in rendered
-    assert "run only after approval" in rendered
+    assert "All checks passed. You are good to go!" in rendered
+    assert "run only after separate approval" in rendered
     assert f"Guide: {monitor.DOCTOR_GUIDE_URL}" in rendered
     assert "ASCII_LOG_SEPARATORS resolves" not in rendered
 
@@ -116,7 +116,7 @@ def test_zero_failures_returns_success(monkeypatch, capsys):
     configure_valid_doctor(monkeypatch)
     monkeypatch.setattr(monitor, "build_doctor_report", lambda *args, **kwargs: monitor.DoctorReport([monitor.make_doctor_check("Environment", "PASS", "ok")]))
     assert monitor.run_doctor() == 0
-    assert "0 failure(s)" in capsys.readouterr().out
+    assert "All checks passed. You are good to go!" in capsys.readouterr().out
 
 
 # Verifies interactive doctor progress is transient while the final report still renders
@@ -134,7 +134,7 @@ def test_doctor_interactive_progress(monkeypatch):
     output = stream.getvalue()
     assert "* Checking notifications ..." in output
     assert "Doctor\n" in output
-    assert "0 failure(s)" in output
+    assert "All checks passed. You are good to go!" in output
 
 
 # Verifies doctor progress stops at the visible message instead of padding to a fixed terminal column
@@ -210,7 +210,7 @@ def test_doctor_delivery_tests_send_approved_messages(monkeypatch):
     assert [check.status for check in results] == ["PASS", "PASS"]
     email.assert_called_once_with("spotify_monitor: doctor test email", "This test email was sent after approval in --doctor. Your SMTP delivery settings work.", "", monitor.SMTP_SSL, smtp_timeout=5)
     webhook.assert_called_once_with("Spotify Monitor doctor test", "This test notification was sent after approval in --doctor. Your webhook delivery settings work.", "song", force=True)
-    assert "Delivery test summary: 0 failure(s)" in stream.getvalue()
+    assert "[PASS] Doctor test webhook delivered" in stream.getvalue()
 
 
 # Verifies noninteractive doctor runs never offer or send delivery tests
