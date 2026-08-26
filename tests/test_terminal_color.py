@@ -446,3 +446,43 @@ def test_target_id_uses_the_id_colour_everywhere(colored, line):
 def test_display_name_still_uses_the_name_colour(colored):
     assert colored["username"] in monitor._colorize_line("Username:\t\t\tJohn Doe")
 
+
+# Verifies the guided setup surface is coloured, not only the monitoring output. The install method decides
+# every command shown afterwards, and the commands themselves are what the user has to copy
+def test_setup_surface_is_coloured(colored, capsys, monkeypatch):
+    monkeypatch.setattr(monitor, "_wizard_install_method", lambda: "pip")
+
+    monitor._wizard_print_setup_destinations("pip", Path("monitor.conf"), Path(".env"))
+    monitor._wizard_print_command("Check setup before monitoring:", "spotify_monitor --doctor <target>")
+    output = capsys.readouterr().out
+
+    assert f"Detected install method: {colored['username']}pip{monitor.ANSI_RESET}" in output
+    assert f"{colored['section']}spotify_monitor --doctor <target>{monitor.ANSI_RESET}" in output
+
+
+# Verifies a wizard prompt and its menu are coloured so the question and the number to type stand out
+def test_wizard_prompt_and_menu_are_coloured(colored, capsys, monkeypatch):
+    monkeypatch.setattr(monitor, "_wizard_input", lambda prompt: "1")
+
+    monitor._wizard_ask_choice("Pick one", [("First", ""), ("Second", "")], default_index=1)
+    output = capsys.readouterr().out
+
+    assert f"{colored['username']}1{monitor.ANSI_RESET}. First" in output
+    assert f"{colored['info']} (default){monitor.ANSI_RESET}" in output
+
+
+# Verifies the Doctor report headings and verdict are coloured, matching the sibling monitors
+def test_doctor_report_headings_are_coloured(colored):
+    report = monitor.render_doctor_report(monitor.build_doctor_report(None, None, "none"))
+
+    assert f"{colored['header']}Doctor{monitor.ANSI_RESET}" in report
+    assert f"{colored['header']}Summary{monitor.ANSI_RESET}" in report
+    assert f"{colored['section']}Environment{monitor.ANSI_RESET}" in report
+    assert monitor.ANSI_ESCAPE_RE.sub("", report).splitlines()[0] == "Doctor"
+
+
+# Verifies recovery guidance reads as advice rather than inheriting the colour of the failure it explains
+def test_recovery_guidance_uses_the_info_colour(colored):
+    line = "To fix: Verify the --config-file path then retry"
+
+    assert monitor._colorize_line(line).startswith(colored["info"])
