@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v3.3
+v3.3.1
 
 Tool implementing real-time tracking of Spotify friends music activity:
 https://github.com/misiektoja/spotify_monitor/
@@ -20,7 +20,7 @@ pycookiecheat (optional, used for Chrome, Brave and Chromium cookie import)
 colorama (optional, for better colours on Windows terminals)
 """
 
-VERSION = "3.3"
+VERSION = "3.3.1"
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -10268,6 +10268,15 @@ def select_monitor_mode(configured_mode: str, cli_mode: Optional[str] = None) ->
     return selected_mode
 
 
+# Applies diagnostic flags both before config error reporting and after config precedence resolution
+def apply_diagnostic_cli_overrides(args: argparse.Namespace) -> None:
+    global DEBUG_MODE, VERBOSE_MODE
+    if args.debug_mode is not None:
+        DEBUG_MODE = args.debug_mode
+    if args.verbose_mode is not None:
+        VERBOSE_MODE = args.verbose_mode
+
+
 # Parses command-line options then starts the selected command or monitoring mode
 def main():
     global CLI_CONFIG_PATH, DOTENV_FILE, LIVENESS_CHECK_COUNTER, LOGIN_REQUEST_BODY_FILE, CLIENTTOKEN_REQUEST_BODY_FILE, REFRESH_TOKEN, LOGIN_URL, USER_AGENT, DEVICE_ID, SYSTEM_ID, USER_URI_ID, SP_DC_COOKIE, CSV_FILE, MONITOR_LIST_FILE, FILE_SUFFIX, DISABLE_LOGGING, DEBUG_MODE, VERBOSE_MODE, SP_LOGFILE, ACTIVE_NOTIFICATION, INACTIVE_NOTIFICATION, TRACK_NOTIFICATION, SONG_NOTIFICATION, SONG_ON_LOOP_NOTIFICATION, ERROR_NOTIFICATION, SCROBBLE_HEALTH_NOTIFICATION, WEBHOOK_ENABLED, WEBHOOK_URL, WEBHOOK_ACTIVE_NOTIFICATION, WEBHOOK_INACTIVE_NOTIFICATION, WEBHOOK_TRACK_NOTIFICATION, WEBHOOK_SONG_NOTIFICATION, WEBHOOK_SONG_ON_LOOP_NOTIFICATION, WEBHOOK_ERROR_NOTIFICATION, WEBHOOK_SCROBBLE_HEALTH_NOTIFICATION, SPOTIFY_CHECK_INTERVAL, SPOTIFY_INACTIVITY_CHECK, SPOTIFY_ERROR_INTERVAL, SPOTIFY_DISAPPEARED_CHECK_INTERVAL, MONITOR_MODE, LASTFM_USERNAME, LASTFM_API_KEY, SPOTIFY_SCROBBLE_CLIENT_ID, SPOTIFY_SCROBBLE_REDIRECT_URI, SPOTIFY_SCROBBLE_REFRESH_TOKEN, SCROBBLE_HEALTH_CHECK_INTERVAL, SCROBBLE_HEALTH_DEAD_PERIOD, SCROBBLE_HEALTH_MIN_UNMATCHED, SCROBBLE_HEALTH_MATCH_WINDOW, SCROBBLE_HEALTH_LOOKBACK, SCROBBLE_HEALTH_REPEAT_INTERVAL, SCROBBLE_HEALTH_STATE_FILE, TRACK_SONGS, SMTP_PASSWORD, stdout_bck, APP_VERSION, CPU_ARCH, OS_BUILD, PLATFORM, OS_MAJOR, OS_MINOR, CLIENT_MODEL, TOKEN_SOURCE, pyotp, USER_AGENT, FLAG_FILE, TRUNCATE_CHARS, SP_APP_TOKENS_FILE, SP_APP_CLIENT_ID, SP_APP_CLIENT_SECRET, NTFY_IMAGES, NTFY_SHORT, COLORED_OUTPUT, COLOR_THEME
@@ -10817,6 +10826,8 @@ def main():
 
     args = parser.parse_args()
 
+    apply_diagnostic_cli_overrides(args)
+
     if args.set_lastfm_credentials:
         conflicts = []
         argument_index = 1
@@ -11129,6 +11140,9 @@ def main():
         elif config_retired and args.doctor:
             doctor_startup_checks.append(make_doctor_check("Configuration", "WARN", "Configuration file contains removed settings", describe_retired_settings(config_retired, cfg_path)))
 
+    # Config loading can replace these globals, so reapply explicit flags to preserve CLI precedence
+    apply_diagnostic_cli_overrides(args)
+
     try:
         requested_monitor_mode = "scrobble_health" if args.authorize_scrobble_health else args.monitor_mode
         MONITOR_MODE = select_monitor_mode(MONITOR_MODE, requested_monitor_mode)
@@ -11175,12 +11189,6 @@ def main():
             except ValueError as exc:
                 print_recovery_error(exc, "target_invalid")
                 sys.exit(1)
-
-    if args.debug_mode is not None:
-        DEBUG_MODE = args.debug_mode
-
-    if args.verbose_mode is not None:
-        VERBOSE_MODE = args.verbose_mode
 
     if args.env_file:
         DOTENV_FILE = os.path.expanduser(args.env_file)
