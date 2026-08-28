@@ -21,6 +21,7 @@ PROBE_SETUP = (
     "runtime['urllib3'].disable_warnings = lambda *args, **kwargs: print('INSECURE_WARNINGS_DISABLED'); "
     "runtime['spotify_monitor_friend_uri'] = lambda user_id, tracks, csv_file: print(f'CHECK_INTERVAL={runtime[\"SPOTIFY_CHECK_INTERVAL\"]}') or print(f'LIVENESS_COUNTER={runtime[\"LIVENESS_CHECK_COUNTER\"]}'); "
 )
+DIAGNOSTIC_CONFIG_PROBE_SETUP = "original_load_config = runtime['load_config_file']; runtime['load_config_file'] = lambda *args, **kwargs: print(f'DEBUG_DURING_CONFIG={runtime[\"DEBUG_MODE\"]}') or print(f'VERBOSE_DURING_CONFIG={runtime[\"VERBOSE_MODE\"]}') or original_load_config(*args, **kwargs); " + PROBE_SETUP
 
 
 # Creates a disposable test directory under the project local directory
@@ -107,6 +108,17 @@ def test_default_configuration_keeps_tls_verification():
     assert result.returncode == 0, result.stderr
     assert probe_value(result.stdout, "CONNECTIVITY_VERIFY") == "True"
     assert "INSECURE_WARNINGS_DISABLED" not in result.stdout
+
+
+@pytest.mark.parametrize(("flag", "setting"), (("--verbose", "VERBOSE_MODE"), ("--debug", "DEBUG_MODE")))
+# Confirms explicit diagnostic flags are already active while the config is loading
+def test_diagnostic_flag_applies_during_config_load(flag, setting):
+    with make_temp_directory() as directory_name:
+        config_path = write_config(directory_name, f"{setting} = False\n")
+        result = run_cli(["--config-file", str(config_path), flag], DIAGNOSTIC_CONFIG_PROBE_SETUP)
+
+    assert result.returncode == 0, result.stderr
+    assert probe_value(result.stdout, f"{setting.removesuffix('_MODE')}_DURING_CONFIG") == "True"
 
 
 @pytest.mark.parametrize("url,timeout,verify", [("https://explicit.example", 3, False), ("https://other.example", 9, True)])
