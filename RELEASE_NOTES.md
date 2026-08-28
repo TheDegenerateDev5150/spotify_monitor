@@ -2,13 +2,14 @@
 
 This is a high-level summary of the most important changes.
 
-# Changes in 3.3.1 (TBD)
+# Changes in 3.3.1 (28 Aug 2026)
 
-Version **3.3.1** makes explicit **`--debug` and `--verbose` flags cover configuration startup** while preserving their precedence over saved defaults.
+Version **3.3.1** makes explicit **`--debug` and `--verbose` flags cover configuration startup** while preserving their precedence over saved defaults, and stops the startup summary from colouring two timer settings as errors.
 
 **Bug fixes**:
 
 - **BUGFIX:** **Diagnostic flags cover configuration startup** - Explicit **`--debug`** and **`--verbose`** flags now take effect before configuration errors are reported, then remain enabled after the selected config loads
+- **BUGFIX:** **Startup summary timers read as settings again** - The **`Disappeared timer`** and **`Error retry timer`** rows shown by **`--verbose`** / **`--debug`** are no longer painted in the error colour just because their labels contain a problem word. They now match every other summary row, with a plain label and a coloured value
 
 # Changes in 3.3 (27 Aug 2026)
 
