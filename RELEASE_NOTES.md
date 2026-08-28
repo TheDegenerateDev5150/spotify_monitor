@@ -9,7 +9,7 @@ Version **3.3.1** makes explicit **`--debug` and `--verbose` flags cover configu
 **Bug fixes**:
 
 - **BUGFIX:** **Diagnostic flags cover configuration startup** - Explicit **`--debug`** and **`--verbose`** flags now take effect before configuration errors are reported, then remain enabled after the selected config loads
-- **BUGFIX:** **Accurate error colouring** - Lines that only mention a problem word are no longer painted red. The **`Disappeared timer`** and **`Error retry timer`** rows shown by **`--verbose`** / **`--debug`**, diagnostic details such as `timeout=15` or `failures=3` and the notice about switching to the web-player backend now keep their normal colours, while real failures stay red
+- **BUGFIX:** **Accurate error colouring** - Lines that only mention a problem word are no longer painted red. The **`Disappeared timer`** and **`Error retry timer`** rows shown by **`--verbose`**, every **`[DEBUG]`** trace line, including the ones recording a retried or handled request, and the notice about switching to the web-player backend now keep their normal colours, while real failures stay red
 
 # Changes in 3.3 (27 Aug 2026)
 
