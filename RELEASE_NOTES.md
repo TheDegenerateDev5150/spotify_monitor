@@ -2,6 +2,14 @@
 
 This is a high-level summary of the most important changes.
 
+# Changes in 3.3.1 (TBD)
+
+Version **3.3.1** makes explicit **`--debug` and `--verbose` flags cover configuration startup** while preserving their precedence over saved defaults.
+
+**Bug fixes**:
+
+- **BUGFIX:** **Diagnostic flags cover configuration startup** - Explicit **`--debug`** and **`--verbose`** flags now take effect before configuration errors are reported, then remain enabled after the selected config loads
+
 # Changes in 3.3 (27 Aug 2026)
 
 Version **3.3** adds **coloured terminal output** with a customizable theme, fixes **false Last.fm outage alerts**, retries **failed alert delivery** and escapes a friend's display name in email notifications. **Pillow is now optional**, **config files are parsed instead of executed**, access tokens are reused until they expire and releases ship with a checksum file plus a signed build attestation.
